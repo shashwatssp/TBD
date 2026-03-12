@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -15,17 +15,13 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Colors } from "@/constants/colors";
-import { useApp } from "@/context/AppContext";
+import { Task, useApp } from "@/context/AppContext";
+import { api } from "@/lib/api";
 
 function ProgressBar({ progress }: { progress: number }) {
   return (
     <View style={styles.progressBg}>
-      <Animated.View
-        style={[
-          styles.progressFill,
-          { width: `${Math.round(progress * 100)}%` as any },
-        ]}
-      />
+      <Animated.View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` as any }]} />
     </View>
   );
 }
@@ -42,17 +38,28 @@ function StatCard({ label, value, icon, color }: { label: string; value: number 
 
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
-  const { user, currentEvent, functions, tasks, setCurrentEvent, events } = useApp();
+  const { user, currentEvent, functions, tasks } = useApp();
+  const [myTasks, setMyTasks] = useState<Task[]>([]);
+
+  const isParticipant = user?.role === "participant";
+
+  useEffect(() => {
+    if (isParticipant && user && currentEvent) {
+      api.getTasks({ assignedTo: user.id, eventId: currentEvent.id })
+        .then((t) => setMyTasks(t))
+        .catch(console.error);
+    }
+  }, [user?.id, currentEvent?.id, isParticipant]);
 
   const eventFunctions = useMemo(
     () => functions.filter((f) => f.eventId === currentEvent?.id),
     [functions, currentEvent]
   );
 
-  const eventTasks = useMemo(
-    () => tasks.filter((t) => eventFunctions.some((f) => f.id === t.functionId)),
-    [tasks, eventFunctions]
-  );
+  const eventTasks = useMemo(() => {
+    if (isParticipant) return myTasks;
+    return tasks.filter((t) => eventFunctions.some((f) => f.id === t.functionId));
+  }, [tasks, eventFunctions, isParticipant, myTasks]);
 
   const totalTasks = eventTasks.length;
   const completedTasks = eventTasks.filter((t) => t.status === "completed").length;
@@ -69,9 +76,7 @@ export default function DashboardScreen() {
     [eventTasks]
   );
 
-  const weddingDate = currentEvent?.weddingDate
-    ? new Date(currentEvent.weddingDate)
-    : null;
+  const weddingDate = currentEvent?.weddingDate ? new Date(currentEvent.weddingDate) : null;
   const today = new Date();
   const daysLeft = weddingDate
     ? Math.max(0, Math.ceil((weddingDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)))
@@ -91,29 +96,35 @@ export default function DashboardScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <LinearGradient
-          colors={["#1A0505", "#3D0C0C"]}
-          style={styles.header}
-        >
+        <LinearGradient colors={["#1A0505", "#3D0C0C"]} style={styles.header}>
           <View style={styles.headerTop}>
             <View>
               <Text style={styles.greeting}>Namaste,</Text>
               <Text style={styles.userName}>{user.name}</Text>
             </View>
-            <View style={styles.codeChip}>
-              <Ionicons name="share-outline" size={14} color={Colors.gold} />
-              <Text style={styles.codeText}>{currentEvent?.eventCode ?? "—"}</Text>
-            </View>
+            {currentEvent && !isParticipant && (
+              <View style={styles.codeChip}>
+                <Ionicons name="share-outline" size={14} color={Colors.gold} />
+                <Text style={styles.codeText}>{currentEvent.eventCode}</Text>
+              </View>
+            )}
+            {isParticipant && (
+              <View style={[styles.codeChip, { backgroundColor: "rgba(212,160,23,0.08)" }]}>
+                <Ionicons name="hand-left-outline" size={14} color={Colors.gold} />
+                <Text style={styles.codeText}>Helper</Text>
+              </View>
+            )}
           </View>
 
           {currentEvent ? (
             <View style={styles.eventCard}>
               <View style={styles.eventTop}>
                 <View style={styles.eventNames}>
-                  <Text style={styles.eventTitle}>
+                  <Text style={styles.eventTitle}>{currentEvent.name}</Text>
+                  <Text style={styles.eventSub}>
                     {currentEvent.brideName} & {currentEvent.groomName}
                   </Text>
-                  <Text style={styles.eventSub}>
+                  <Text style={[styles.eventSub, { marginTop: 2 }]}>
                     <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.55)" />
                     {"  "}{currentEvent.weddingCity}
                   </Text>
@@ -125,10 +136,11 @@ export default function DashboardScreen() {
                   </View>
                 )}
               </View>
-
               <View style={styles.progressSection}>
                 <View style={styles.progressHeader}>
-                  <Text style={styles.progressLabel}>Overall Progress</Text>
+                  <Text style={styles.progressLabel}>
+                    {isParticipant ? "My Task Progress" : "Overall Progress"}
+                  </Text>
                   <Text style={styles.progressPct}>{Math.round(progress * 100)}%</Text>
                 </View>
                 <ProgressBar progress={progress} />
@@ -139,9 +151,11 @@ export default function DashboardScreen() {
               <Text style={styles.noEventText}>No wedding event selected</Text>
               <Pressable
                 style={styles.createEventBtn}
-                onPress={() => router.push("/create-event")}
+                onPress={() => router.push(isParticipant ? "/join-event" : "/create-event")}
               >
-                <Text style={styles.createEventBtnText}>Create Wedding</Text>
+                <Text style={styles.createEventBtnText}>
+                  {isParticipant ? "Join Wedding" : "Create Wedding"}
+                </Text>
               </Pressable>
             </View>
           )}
@@ -155,47 +169,79 @@ export default function DashboardScreen() {
               <StatCard label="Pending" value={pendingTasks} icon="ellipse-outline" color={Colors.textMuted} />
             </Animated.View>
 
-            <Animated.View entering={FadeInDown.delay(150).duration(500)} style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Functions</Text>
-                <Pressable onPress={() => router.push("/(tabs)/functions")}>
-                  <Text style={styles.seeAll}>See all</Text>
-                </Pressable>
-              </View>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.functionsScroll}
-              >
-                {eventFunctions.slice(0, 6).map((fn) => {
-                  const fnTasks = tasks.filter((t) => t.functionId === fn.id);
-                  const fnCompleted = fnTasks.filter((t) => t.status === "completed").length;
-                  const fnProgress = fnTasks.length > 0 ? fnCompleted / fnTasks.length : 0;
-                  return (
-                    <Pressable
-                      key={fn.id}
-                      style={({ pressed }) => [
-                        styles.fnCard,
-                        { borderTopColor: fn.color, opacity: pressed ? 0.85 : 1 },
-                      ]}
-                      onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        router.push({ pathname: "/function/[id]", params: { id: fn.id } });
-                      }}
-                    >
-                      <Ionicons name={fn.icon as never} size={24} color={fn.color} />
-                      <Text style={styles.fnName}>{fn.name}</Text>
-                      <Text style={styles.fnTaskCount}>{fnTasks.length} tasks</Text>
-                      <View style={styles.fnProgressBg}>
-                        <View style={[styles.fnProgressFill, { width: `${fnProgress * 100}%` as any, backgroundColor: fn.color }]} />
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </Animated.View>
+            {!isParticipant && eventFunctions.length > 0 && (
+              <Animated.View entering={FadeInDown.delay(150).duration(500)} style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Functions</Text>
+                  <Pressable onPress={() => router.push("/(tabs)/functions")}>
+                    <Text style={styles.seeAll}>See all</Text>
+                  </Pressable>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.functionsScroll}>
+                  {eventFunctions.slice(0, 6).map((fn) => {
+                    const fnTasks = tasks.filter((t) => t.functionId === fn.id);
+                    const fnCompleted = fnTasks.filter((t) => t.status === "completed").length;
+                    const fnProgress = fnTasks.length > 0 ? fnCompleted / fnTasks.length : 0;
+                    return (
+                      <Pressable
+                        key={fn.id}
+                        style={({ pressed }) => [styles.fnCard, { borderTopColor: fn.color, opacity: pressed ? 0.85 : 1 }]}
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          router.push({ pathname: "/function/[id]", params: { id: fn.id } });
+                        }}
+                      >
+                        <Ionicons name={fn.icon as never} size={24} color={fn.color} />
+                        <Text style={styles.fnName}>{fn.name}</Text>
+                        <Text style={styles.fnTaskCount}>{fnTasks.length} tasks</Text>
+                        <View style={styles.fnProgressBg}>
+                          <View style={[styles.fnProgressFill, { width: `${fnProgress * 100}%` as any, backgroundColor: fn.color }]} />
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </Animated.View>
+            )}
 
-            {upcomingTasks.length > 0 && (
+            {isParticipant && myTasks.length > 0 && (
+              <Animated.View entering={FadeInDown.delay(150).duration(500)} style={styles.section}>
+                <Text style={styles.sectionTitle}>My Tasks</Text>
+                <View style={styles.deadlineList}>
+                  {myTasks.slice(0, 5).map((task) => {
+                    const fn = functions.find((f) => f.id === task.functionId);
+                    const statusColors: Record<string, string> = {
+                      not_started: Colors.textMuted,
+                      in_progress: Colors.warning,
+                      completed: Colors.success,
+                    };
+                    const statusLabels: Record<string, string> = {
+                      not_started: "Pending",
+                      in_progress: "In Progress",
+                      completed: "Done",
+                    };
+                    return (
+                      <Pressable
+                        key={task.id}
+                        style={({ pressed }) => [styles.deadlineCard, { opacity: pressed ? 0.85 : 1 }]}
+                        onPress={() => router.push({ pathname: "/task/[id]", params: { id: task.id } })}
+                      >
+                        <View style={[styles.priorityBar, { backgroundColor: statusColors[task.status] }]} />
+                        <View style={styles.deadlineInfo}>
+                          <Text style={styles.deadlineTitle}>{task.title}</Text>
+                          <Text style={styles.deadlineFn}>{fn?.name ?? "—"}</Text>
+                        </View>
+                        <Text style={[styles.dueDate, { color: statusColors[task.status] }]}>
+                          {statusLabels[task.status]}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </Animated.View>
+            )}
+
+            {upcomingTasks.length > 0 && !isParticipant && (
               <Animated.View entering={FadeInDown.delay(200).duration(500)} style={styles.section}>
                 <Text style={styles.sectionTitle}>Upcoming Deadlines</Text>
                 <View style={styles.deadlineList}>
@@ -206,10 +252,7 @@ export default function DashboardScreen() {
                     return (
                       <Pressable
                         key={task.id}
-                        style={({ pressed }) => [
-                          styles.deadlineCard,
-                          { opacity: pressed ? 0.85 : 1 },
-                        ]}
+                        style={({ pressed }) => [styles.deadlineCard, { opacity: pressed ? 0.85 : 1 }]}
                         onPress={() => router.push({ pathname: "/task/[id]", params: { id: task.id } })}
                       >
                         <View style={[styles.priorityBar, { backgroundColor: Colors[`priority${task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}` as keyof typeof Colors] as string }]} />
@@ -232,45 +275,42 @@ export default function DashboardScreen() {
             {totalTasks === 0 && (
               <Animated.View entering={FadeInDown.delay(200)} style={styles.emptyState}>
                 <Ionicons name="clipboard-outline" size={48} color={Colors.border} />
-                <Text style={styles.emptyTitle}>No tasks yet</Text>
-                <Text style={styles.emptySubtitle}>
-                  Go to a function to start adding tasks
+                <Text style={styles.emptyTitle}>
+                  {isParticipant ? "No tasks assigned yet" : "No tasks yet"}
                 </Text>
-                <Pressable
-                  style={styles.emptyBtn}
-                  onPress={() => router.push("/(tabs)/functions")}
-                >
-                  <Text style={styles.emptyBtnText}>View Functions</Text>
-                </Pressable>
+                <Text style={styles.emptySubtitle}>
+                  {isParticipant
+                    ? "The organiser will assign tasks to you soon"
+                    : "Go to a function to start adding tasks"}
+                </Text>
+                {!isParticipant && (
+                  <Pressable style={styles.emptyBtn} onPress={() => router.push("/(tabs)/functions")}>
+                    <Text style={styles.emptyBtnText}>View Functions</Text>
+                  </Pressable>
+                )}
               </Animated.View>
             )}
           </>
         )}
 
-        {!currentEvent && events.length > 0 && (
-          <Animated.View entering={FadeInDown.delay(100)} style={styles.section}>
-            <Text style={styles.sectionTitle}>Your Events</Text>
-            {events.map((ev) => (
-              <Pressable
-                key={ev.id}
-                style={({ pressed }) => [styles.evCard, { opacity: pressed ? 0.85 : 1 }]}
-                onPress={() => {
-                  setCurrentEvent(ev);
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                }}
-              >
-                <View>
-                  <Text style={styles.evName}>{ev.brideName} & {ev.groomName}</Text>
-                  <Text style={styles.evSub}>{ev.weddingCity} · {ev.eventCode}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
-              </Pressable>
-            ))}
+        {!currentEvent && (
+          <Animated.View entering={FadeInDown.delay(100)} style={[styles.section, { alignItems: "center", paddingTop: 40 }]}>
+            <Ionicons name="heart-outline" size={56} color={Colors.border} />
+            <Text style={styles.emptyTitle}>No event yet</Text>
+            <Text style={[styles.emptySubtitle, { textAlign: "center" }]}>
+              {isParticipant ? "Join a wedding event using the event code" : "Create a new wedding event to get started"}
+            </Text>
+            <Pressable
+              style={styles.emptyBtn}
+              onPress={() => router.push(isParticipant ? "/join-event" : "/create-event")}
+            >
+              <Text style={styles.emptyBtnText}>{isParticipant ? "Join Event" : "Create Event"}</Text>
+            </Pressable>
           </Animated.View>
         )}
       </ScrollView>
 
-      {!currentEvent && (
+      {!currentEvent && !isParticipant && (
         <View style={[styles.fab, { bottom: Platform.OS === "web" ? 34 + 84 : insets.bottom + 100 }]}>
           <Pressable
             style={({ pressed }) => [styles.fabBtn, { opacity: pressed ? 0.85 : 1 }]}
@@ -346,19 +386,9 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.08)",
   },
   noEventText: { fontFamily: "Inter_500Medium", fontSize: 15, color: "rgba(255,255,255,0.6)" },
-  createEventBtn: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
+  createEventBtn: { backgroundColor: Colors.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
   createEventBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#FFFFFF" },
-  statsRow: {
-    flexDirection: "row",
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-  },
+  statsRow: { flexDirection: "row", gap: 12, paddingHorizontal: 20, paddingTop: 20 },
   statCard: {
     flex: 1,
     backgroundColor: Colors.card,
@@ -420,18 +450,6 @@ const styles = StyleSheet.create({
   emptySubtitle: { fontFamily: "Inter_400Regular", fontSize: 14, color: Colors.textMuted, textAlign: "center" },
   emptyBtn: { backgroundColor: Colors.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 8 },
   emptyBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#FFFFFF" },
-  evCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: Colors.card,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  evName: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: Colors.text },
-  evSub: { fontFamily: "Inter_400Regular", fontSize: 13, color: Colors.textMuted, marginTop: 3 },
   fab: { position: "absolute", left: 20, right: 20 },
   fabBtn: {
     flexDirection: "row",

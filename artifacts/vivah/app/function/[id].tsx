@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Modal,
   Platform,
   Pressable,
@@ -50,18 +51,21 @@ const TASK_SUGGESTIONS = [
 ];
 
 function TaskCard({ task, onPress }: { task: Task; onPress: () => void }) {
-  const { updateTask, addNotification } = useApp();
+  const { updateTask, addNotification, user } = useApp();
   const completed = task.subtasks.filter((s) => s.completed).length;
 
-  const cycleStatus = () => {
+  const cycleStatus = async () => {
     const cycle: TaskStatus[] = ["not_started", "in_progress", "completed"];
     const next = cycle[(cycle.indexOf(task.status) + 1) % 3];
-    updateTask(task.id, { status: next });
-    addNotification({
-      title: "Task Status Updated",
-      message: `"${task.title}" is now ${STATUS_LABELS[next]}`,
-      type: "status_change",
-    });
+    await updateTask(task.id, { status: next });
+    if (user) {
+      await addNotification({
+        userId: user.id,
+        title: "Task Status Updated",
+        message: `"${task.title}" is now ${STATUS_LABELS[next]}`,
+        type: "status_change",
+      });
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
@@ -113,51 +117,83 @@ function TaskCard({ task, onPress }: { task: Task; onPress: () => void }) {
 export default function FunctionDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { functions, tasks, user, createTask, addNotification } = useApp();
+  const { functions, tasks, user, participants, createTask, addNotification, loadTasksForFunction, loadingTasks } = useApp();
   const [showAdd, setShowAdd] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [filterStatus, setFilterStatus] = useState<TaskStatus | "all">("all");
+  const [selectedParticipant, setSelectedParticipant] = useState<{ id: string; name: string } | null>(null);
+  const [addingTask, setAddingTask] = useState(false);
+
+  const isParticipant = user?.role === "participant";
 
   const fn = functions.find((f) => f.id === id);
+
+  useEffect(() => {
+    if (id) {
+      loadTasksForFunction(id);
+    }
+  }, [id]);
+
   const fnTasks = useMemo(
     () => tasks.filter((t) => t.functionId === id),
     [tasks, id]
   );
 
+  const displayTasks = useMemo(() => {
+    if (isParticipant && user) {
+      return fnTasks.filter((t) => t.assignedTo === user.id);
+    }
+    return fnTasks;
+  }, [fnTasks, isParticipant, user]);
+
   const filteredTasks = useMemo(
-    () =>
-      filterStatus === "all"
-        ? fnTasks
-        : fnTasks.filter((t) => t.status === filterStatus),
-    [fnTasks, filterStatus]
+    () => filterStatus === "all" ? displayTasks : displayTasks.filter((t) => t.status === filterStatus),
+    [displayTasks, filterStatus]
   );
 
   const completed = fnTasks.filter((t) => t.status === "completed").length;
   const progress = fnTasks.length > 0 ? completed / fnTasks.length : 0;
 
-  const handleAddTask = () => {
-    if (!newTitle.trim() || !fn) return;
-    createTask({
-      functionId: fn.id,
-      title: newTitle.trim(),
-      description: "",
-      dueDate: null,
-      assignedTo: user?.id ?? null,
-      assignedToName: user?.name ?? null,
-      priority,
-      status: "not_started",
-      subtasks: [],
-    });
-    addNotification({
-      title: "Task Assigned",
-      message: `"${newTitle.trim()}" has been created in ${fn.name}`,
-      type: "task_assigned",
-    });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setShowAdd(false);
-    setNewTitle("");
-    setPriority("medium");
+  const handleAddTask = async () => {
+    if (!newTitle.trim() || !fn || !user || addingTask) return;
+    setAddingTask(true);
+    try {
+      const assignee = selectedParticipant ?? { id: user.id, name: user.name };
+      await createTask({
+        functionId: fn.id,
+        title: newTitle.trim(),
+        description: "",
+        dueDate: null,
+        assignedTo: assignee.id,
+        assignedToName: assignee.name,
+        priority,
+        status: "not_started",
+      });
+      if (selectedParticipant) {
+        await addNotification({
+          userId: selectedParticipant.id,
+          title: "Task Assigned to You",
+          message: `"${newTitle.trim()}" has been assigned to you in ${fn.name}`,
+          type: "task_assigned",
+        });
+      }
+      await addNotification({
+        userId: user.id,
+        title: "Task Created",
+        message: `"${newTitle.trim()}" added to ${fn.name}`,
+        type: "task_assigned",
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowAdd(false);
+      setNewTitle("");
+      setPriority("medium");
+      setSelectedParticipant(null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAddingTask(false);
+    }
   };
 
   if (!fn) {
@@ -187,21 +223,27 @@ export default function FunctionDetailScreen() {
           <View style={[styles.fnIcon, { backgroundColor: fn.color + "25" }]}>
             <Ionicons name={fn.icon as never} size={26} color={fn.color} />
           </View>
-          <Pressable
-            style={styles.addFab}
-            onPress={() => setShowAdd(true)}
-          >
-            <Ionicons name="add" size={22} color="#FFFFFF" />
-          </Pressable>
+          {!isParticipant && (
+            <Pressable style={styles.addFab} onPress={() => setShowAdd(true)}>
+              <Ionicons name="add" size={22} color="#FFFFFF" />
+            </Pressable>
+          )}
+          {isParticipant && <View style={{ width: 44 }} />}
         </View>
         <Text style={styles.fnTitle}>{fn.name}</Text>
         <View style={styles.progressRow}>
-          <Text style={styles.progressLabel}>{completed}/{fnTasks.length} tasks complete</Text>
-          <Text style={[styles.progressPct, { color: fn.color }]}>{Math.round(progress * 100)}%</Text>
+          <Text style={styles.progressLabel}>
+            {isParticipant ? `${displayTasks.length} tasks assigned to me` : `${completed}/${fnTasks.length} tasks complete`}
+          </Text>
+          {!isParticipant && (
+            <Text style={[styles.progressPct, { color: fn.color }]}>{Math.round(progress * 100)}%</Text>
+          )}
         </View>
-        <View style={styles.progressBg}>
-          <View style={[styles.progressFill, { width: `${progress * 100}%` as any, backgroundColor: fn.color }]} />
-        </View>
+        {!isParticipant && (
+          <View style={styles.progressBg}>
+            <View style={[styles.progressFill, { width: `${progress * 100}%` as any, backgroundColor: fn.color }]} />
+          </View>
+        )}
       </View>
 
       <View style={styles.filterRow}>
@@ -225,12 +267,22 @@ export default function FunctionDetailScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {filteredTasks.length === 0 ? (
+        {loadingTasks && fnTasks.length === 0 ? (
+          <View style={styles.empty}>
+            <ActivityIndicator color={Colors.primary} />
+          </View>
+        ) : filteredTasks.length === 0 ? (
           <Animated.View entering={FadeInDown} style={styles.empty}>
             <Ionicons name="clipboard-outline" size={48} color={Colors.border} />
-            <Text style={styles.emptyTitle}>No tasks yet</Text>
+            <Text style={styles.emptyTitle}>
+              {isParticipant ? "No tasks assigned" : "No tasks yet"}
+            </Text>
             <Text style={styles.emptySub}>
-              {filterStatus !== "all" ? "No tasks with this status" : "Tap + to add your first task"}
+              {filterStatus !== "all"
+                ? "No tasks with this status"
+                : isParticipant
+                ? "The organiser will assign tasks to you"
+                : "Tap + to add your first task"}
             </Text>
           </Animated.View>
         ) : (
@@ -259,21 +311,56 @@ export default function FunctionDetailScreen() {
               onChangeText={setNewTitle}
               placeholderTextColor={Colors.textMuted}
               autoFocus
+              underlineColorAndroid="transparent"
             />
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
               <View style={{ flexDirection: "row", gap: 8 }}>
                 {TASK_SUGGESTIONS.map((s) => (
-                  <Pressable
-                    key={s}
-                    style={styles.suggestionChip}
-                    onPress={() => setNewTitle(s)}
-                  >
+                  <Pressable key={s} style={styles.suggestionChip} onPress={() => setNewTitle(s)}>
                     <Text style={styles.suggestionText}>{s}</Text>
                   </Pressable>
                 ))}
               </View>
             </ScrollView>
+
+            {participants.filter((p) => p.role === "participant").length > 0 && (
+              <>
+                <Text style={styles.sheetLabel}>Assign to</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <Pressable
+                      style={[
+                        styles.participantChip,
+                        !selectedParticipant && { borderColor: Colors.primary, backgroundColor: Colors.primary + "15" },
+                      ]}
+                      onPress={() => setSelectedParticipant(null)}
+                    >
+                      <Text style={[styles.participantChipText, !selectedParticipant && { color: Colors.primary }]}>
+                        Myself
+                      </Text>
+                    </Pressable>
+                    {participants
+                      .filter((p) => p.role === "participant")
+                      .map((p) => (
+                        <Pressable
+                          key={p.id}
+                          style={[
+                            styles.participantChip,
+                            selectedParticipant?.id === p.id && { borderColor: Colors.primary, backgroundColor: Colors.primary + "15" },
+                          ]}
+                          onPress={() => setSelectedParticipant({ id: p.id, name: p.name })}
+                        >
+                          <Ionicons name="person-outline" size={12} color={selectedParticipant?.id === p.id ? Colors.primary : Colors.textMuted} />
+                          <Text style={[styles.participantChipText, selectedParticipant?.id === p.id && { color: Colors.primary }]}>
+                            {p.name}
+                          </Text>
+                        </Pressable>
+                      ))}
+                  </View>
+                </ScrollView>
+              </>
+            )}
 
             <Text style={styles.sheetLabel}>Priority</Text>
             <View style={styles.priorityRow}>
@@ -286,12 +373,7 @@ export default function FunctionDetailScreen() {
                   ]}
                   onPress={() => setPriority(p)}
                 >
-                  <Text
-                    style={[
-                      styles.priorityChipText,
-                      priority === p && { color: "#FFFFFF" },
-                    ]}
-                  >
+                  <Text style={[styles.priorityChipText, priority === p && { color: "#FFFFFF" }]}>
                     {p.charAt(0).toUpperCase() + p.slice(1)}
                   </Text>
                 </Pressable>
@@ -301,13 +383,17 @@ export default function FunctionDetailScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.addTaskBtn,
-                !newTitle.trim() && styles.addTaskBtnDisabled,
+                (!newTitle.trim() || addingTask) && styles.addTaskBtnDisabled,
                 { opacity: pressed && !!newTitle.trim() ? 0.85 : 1 },
               ]}
               onPress={handleAddTask}
-              disabled={!newTitle.trim()}
+              disabled={!newTitle.trim() || addingTask}
             >
-              <Text style={styles.addTaskBtnText}>Add Task</Text>
+              {addingTask ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.addTaskBtnText}>Add Task</Text>
+              )}
             </Pressable>
           </Pressable>
         </Pressable>
@@ -339,12 +425,7 @@ const styles = StyleSheet.create({
   progressPct: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
   progressBg: { height: 6, backgroundColor: Colors.border, borderRadius: 3, overflow: "hidden" },
   progressFill: { height: "100%", borderRadius: 3 },
-  filterRow: {
-    flexDirection: "row",
-    gap: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
+  filterRow: { flexDirection: "row", gap: 8, paddingHorizontal: 20, paddingVertical: 12 },
   filterChip: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -411,7 +492,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     paddingHorizontal: 16,
     paddingVertical: 14,
-  },
+    outlineWidth: 0,
+  } as any,
   suggestionChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -421,6 +503,18 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   suggestionText: { fontFamily: "Inter_400Regular", fontSize: 12, color: Colors.textSecondary },
+  participantChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: Colors.background,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  participantChipText: { fontFamily: "Inter_500Medium", fontSize: 12, color: Colors.textMuted },
   priorityRow: { flexDirection: "row", gap: 10 },
   priorityChip: {
     flex: 1,

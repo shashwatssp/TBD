@@ -1,22 +1,32 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Vivah Wedding Task Management API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Auth operations
+  - name: events
+    description: Wedding events
+  - name: functions
+    description: Wedding functions/rituals
+  - name: tasks
+    description: Task management
+  - name: subtasks
+    description: Subtask management
+  - name: notifications
+    description: Notifications
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +34,344 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/users:
+    post:
+      operationId: upsertUser
+      tags: [auth]
+      summary: Create or get user by phone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertUserInput"
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+
+  /auth/users/{userId}:
+    patch:
+      operationId: updateUser
+      tags: [auth]
+      summary: Update user role
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserInput"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+
+  /events:
+    post:
+      operationId: createEvent
+      tags: [events]
+      summary: Create a wedding event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEventInput"
+      responses:
+        "201":
+          description: Created event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventResponse"
+
+  /events/join:
+    post:
+      operationId: joinEvent
+      tags: [events]
+      summary: Join event by code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JoinEventInput"
+      responses:
+        "200":
+          description: Event data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventResponse"
+
+  /events/{eventId}:
+    get:
+      operationId: getEvent
+      tags: [events]
+      summary: Get event by ID
+      parameters:
+        - in: path
+          name: eventId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventResponse"
+
+  /events/{eventId}/participants:
+    get:
+      operationId: getEventParticipants
+      tags: [events]
+      summary: Get participants for an event
+      parameters:
+        - in: path
+          name: eventId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Participants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserResponse"
+
+  /functions:
+    get:
+      operationId: getFunctions
+      tags: [functions]
+      summary: Get functions for an event
+      parameters:
+        - in: query
+          name: eventId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Functions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FunctionResponse"
+    post:
+      operationId: createFunction
+      tags: [functions]
+      summary: Create a wedding function
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFunctionInput"
+      responses:
+        "201":
+          description: Created function
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FunctionResponse"
+
+  /tasks:
+    get:
+      operationId: getTasks
+      tags: [tasks]
+      summary: Get tasks (by functionId or assignedTo)
+      parameters:
+        - in: query
+          name: functionId
+          schema:
+            type: string
+        - in: query
+          name: assignedTo
+          schema:
+            type: string
+        - in: query
+          name: eventId
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tasks with subtasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskWithSubtasks"
+    post:
+      operationId: createTask
+      tags: [tasks]
+      summary: Create a task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskInput"
+      responses:
+        "201":
+          description: Created task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskWithSubtasks"
+
+  /tasks/{taskId}:
+    patch:
+      operationId: updateTask
+      tags: [tasks]
+      summary: Update a task
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskInput"
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskWithSubtasks"
+
+  /tasks/{taskId}/subtasks:
+    post:
+      operationId: addSubtask
+      tags: [subtasks]
+      summary: Add subtask to a task
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddSubtaskInput"
+      responses:
+        "201":
+          description: Created subtask
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubtaskResponse"
+
+  /subtasks/{subtaskId}:
+    patch:
+      operationId: toggleSubtask
+      tags: [subtasks]
+      summary: Toggle subtask completion
+      parameters:
+        - in: path
+          name: subtaskId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ToggleSubtaskInput"
+      responses:
+        "200":
+          description: Updated subtask
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubtaskResponse"
+
+  /notifications:
+    get:
+      operationId: getNotifications
+      tags: [notifications]
+      summary: Get notifications for a user
+      parameters:
+        - in: query
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotificationResponse"
+    post:
+      operationId: createNotification
+      tags: [notifications]
+      summary: Create a notification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNotificationInput"
+      responses:
+        "201":
+          description: Created notification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationResponse"
+
+  /notifications/{notifId}/read:
+    patch:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark notification as read
+      parameters:
+        - in: path
+          name: notifId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated notification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +379,280 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [manager, participant]
+        createdAt:
+          type: string
+      required: [id, name, phone, role, createdAt]
+
+    UpsertUserInput:
+      type: object
+      properties:
+        phone:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [manager, participant]
+      required: [phone, name]
+
+    UpdateUserInput:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [manager, participant]
+        name:
+          type: string
+
+    EventResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        brideName:
+          type: string
+        groomName:
+          type: string
+        weddingCity:
+          type: string
+        weddingDate:
+          type: string
+        description:
+          type: string
+        eventCode:
+          type: string
+        managerId:
+          type: string
+        createdAt:
+          type: string
+      required: [id, name, brideName, groomName, weddingCity, weddingDate, description, eventCode, managerId, createdAt]
+
+    CreateEventInput:
+      type: object
+      properties:
+        name:
+          type: string
+        brideName:
+          type: string
+        groomName:
+          type: string
+        weddingCity:
+          type: string
+        weddingDate:
+          type: string
+        description:
+          type: string
+        managerId:
+          type: string
+      required: [name, brideName, groomName, weddingCity, weddingDate, managerId]
+
+    JoinEventInput:
+      type: object
+      properties:
+        eventCode:
+          type: string
+        userId:
+          type: string
+      required: [eventCode, userId]
+
+    FunctionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        eventId:
+          type: string
+        name:
+          type: string
+        date:
+          type: string
+          nullable: true
+        description:
+          type: string
+        icon:
+          type: string
+        color:
+          type: string
+        createdAt:
+          type: string
+      required: [id, eventId, name, description, icon, color, createdAt]
+
+    CreateFunctionInput:
+      type: object
+      properties:
+        eventId:
+          type: string
+        name:
+          type: string
+        date:
+          type: string
+          nullable: true
+        description:
+          type: string
+        icon:
+          type: string
+        color:
+          type: string
+      required: [eventId, name, icon, color]
+
+    SubtaskResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        taskId:
+          type: string
+        title:
+          type: string
+        completed:
+          type: boolean
+        createdAt:
+          type: string
+      required: [id, taskId, title, completed, createdAt]
+
+    TaskWithSubtasks:
+      type: object
+      properties:
+        id:
+          type: string
+        functionId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        dueDate:
+          type: string
+          nullable: true
+        assignedTo:
+          type: string
+          nullable: true
+        assignedToName:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          enum: [high, medium, low]
+        status:
+          type: string
+          enum: [not_started, in_progress, completed]
+        createdAt:
+          type: string
+        subtasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubtaskResponse"
+      required: [id, functionId, title, description, priority, status, createdAt, subtasks]
+
+    CreateTaskInput:
+      type: object
+      properties:
+        functionId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        dueDate:
+          type: string
+          nullable: true
+        assignedTo:
+          type: string
+          nullable: true
+        assignedToName:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          enum: [high, medium, low]
+        status:
+          type: string
+          enum: [not_started, in_progress, completed]
+      required: [functionId, title, priority, status]
+
+    UpdateTaskInput:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        dueDate:
+          type: string
+          nullable: true
+        assignedTo:
+          type: string
+          nullable: true
+        assignedToName:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          enum: [high, medium, low]
+        status:
+          type: string
+          enum: [not_started, in_progress, completed]
+
+    AddSubtaskInput:
+      type: object
+      properties:
+        title:
+          type: string
+      required: [title]
+
+    ToggleSubtaskInput:
+      type: object
+      properties:
+        completed:
+          type: boolean
+      required: [completed]
+
+    NotificationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        title:
+          type: string
+        message:
+          type: string
+        type:
+          type: string
+          enum: [task_assigned, deadline, status_change, new_function]
+        read:
+          type: boolean
+        createdAt:
+          type: string
+      required: [id, userId, title, message, type, read, createdAt]
+
+    CreateNotificationInput:
+      type: object
+      properties:
+        userId:
+          type: string
+        title:
+          type: string
+        message:
+          type: string
+        type:
+          type: string
+          enum: [task_assigned, deadline, status_change, new_function]
+      required: [userId, title, message, type]

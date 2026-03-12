@@ -31,35 +31,45 @@ const FUNCTION_ICONS = [
 
 export default function FunctionsScreen() {
   const insets = useSafeAreaInsets();
-  const { currentEvent, functions, tasks, createFunction, addNotification } = useApp();
+  const { user, currentEvent, functions, tasks, createFunction, addNotification } = useApp();
   const [showAdd, setShowAdd] = useState(false);
   const [customName, setCustomName] = useState("");
   const [selectedIcon, setSelectedIcon] = useState(FUNCTION_ICONS[0]);
+  const [addingFn, setAddingFn] = useState(false);
+
+  const isParticipant = user?.role === "participant";
 
   const eventFunctions = useMemo(
     () => functions.filter((f) => f.eventId === currentEvent?.id),
     [functions, currentEvent]
   );
 
-  const handleAdd = () => {
-    if (!currentEvent) return;
+  const handleAdd = async () => {
+    if (!currentEvent || !user || addingFn) return;
+    setAddingFn(true);
     const name = customName.trim() || selectedIcon.name;
-    createFunction({
-      eventId: currentEvent.id,
-      name,
-      date: null,
-      description: "",
-      icon: selectedIcon.icon,
-      color: selectedIcon.color,
-    });
-    addNotification({
-      title: "New Function Added",
-      message: `${name} has been added to the wedding`,
-      type: "new_function",
-    });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setShowAdd(false);
-    setCustomName("");
+    try {
+      await createFunction({
+        name,
+        date: null,
+        description: "",
+        icon: selectedIcon.icon,
+        color: selectedIcon.color,
+      });
+      await addNotification({
+        userId: user.id,
+        title: "New Function Added",
+        message: `${name} has been added to the wedding`,
+        type: "new_function",
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowAdd(false);
+      setCustomName("");
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAddingFn(false);
+    }
   };
 
   if (!currentEvent) {
@@ -92,12 +102,14 @@ export default function FunctionsScreen() {
             <Text style={styles.screenTitle}>Functions</Text>
             <Text style={styles.screenSub}>{currentEvent.brideName} & {currentEvent.groomName}</Text>
           </View>
-          <Pressable
-            style={({ pressed }) => [styles.addBtn, { opacity: pressed ? 0.8 : 1 }]}
-            onPress={() => setShowAdd(true)}
-          >
-            <Ionicons name="add" size={22} color="#FFFFFF" />
-          </Pressable>
+          {!isParticipant && (
+            <Pressable
+              style={({ pressed }) => [styles.addBtn, { opacity: pressed ? 0.8 : 1 }]}
+              onPress={() => setShowAdd(true)}
+            >
+              <Ionicons name="add" size={22} color="#FFFFFF" />
+            </Pressable>
+          )}
         </View>
 
         {eventFunctions.length === 0 ? (

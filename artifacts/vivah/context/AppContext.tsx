@@ -4,276 +4,267 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
+import { api, ApiEvent, ApiFunction, ApiNotification, ApiSubtask, ApiTask, ApiUser, UserRole } from "@/lib/api";
 
 export type TaskStatus = "not_started" | "in_progress" | "completed";
 export type TaskPriority = "high" | "medium" | "low";
+export type { UserRole };
 
 export interface User {
   id: string;
   name: string;
   phone: string;
+  role: UserRole;
 }
 
-export interface Subtask {
-  id: string;
-  title: string;
-  completed: boolean;
-}
-
-export interface Task {
-  id: string;
-  functionId: string;
-  title: string;
-  description: string;
-  dueDate: string | null;
-  assignedTo: string | null;
-  assignedToName: string | null;
-  priority: TaskPriority;
-  status: TaskStatus;
-  subtasks: Subtask[];
-  createdAt: string;
-}
-
-export interface WeddingFunction {
-  id: string;
-  eventId: string;
-  name: string;
-  date: string | null;
-  description: string;
-  icon: string;
-  color: string;
-  createdAt: string;
-}
-
-export interface WeddingEvent {
-  id: string;
-  name: string;
-  brideName: string;
-  groomName: string;
-  weddingCity: string;
-  weddingDate: string;
-  description: string;
-  eventCode: string;
-  managerId: string;
-  participants: string[];
-  createdAt: string;
-}
-
-export interface Notification {
-  id: string;
-  title: string;
-  message: string;
-  type: "task_assigned" | "deadline" | "status_change" | "new_function";
-  read: boolean;
-  createdAt: string;
-}
+export type Subtask = ApiSubtask;
+export type Task = ApiTask;
+export type WeddingFunction = ApiFunction;
+export type WeddingEvent = ApiEvent;
+export type Notification = ApiNotification;
 
 interface AppContextType {
   user: User | null;
-  setUser: (user: User | null) => void;
-  events: WeddingEvent[];
+  setUser: (user: User | null) => Promise<void>;
+  updateUserRole: (role: UserRole) => Promise<void>;
   currentEvent: WeddingEvent | null;
-  setCurrentEvent: (event: WeddingEvent | null) => void;
+  setCurrentEvent: (event: WeddingEvent | null) => Promise<void>;
+  participants: ApiUser[];
   functions: WeddingFunction[];
   tasks: Task[];
   notifications: Notification[];
-  createEvent: (event: Omit<WeddingEvent, "id" | "eventCode" | "participants" | "createdAt">) => WeddingEvent;
-  joinEvent: (code: string) => WeddingEvent | null;
-  createFunction: (fn: Omit<WeddingFunction, "id" | "createdAt">) => WeddingFunction;
-  createTask: (task: Omit<Task, "id" | "createdAt">) => Task;
-  updateTask: (taskId: string, updates: Partial<Task>) => void;
-  updateSubtask: (taskId: string, subtaskId: string, completed: boolean) => void;
-  addSubtask: (taskId: string, title: string) => void;
-  markNotificationRead: (id: string) => void;
-  addNotification: (n: Omit<Notification, "id" | "createdAt" | "read">) => void;
+  loadingFunctions: boolean;
+  loadingTasks: boolean;
+  createEvent: (event: {
+    name: string; brideName: string; groomName: string;
+    weddingCity: string; weddingDate: string; description?: string;
+  }) => Promise<WeddingEvent>;
+  joinEvent: (code: string) => Promise<WeddingEvent>;
+  createFunction: (fn: {
+    name: string; date?: string | null; description?: string; icon: string; color: string;
+  }) => Promise<WeddingFunction>;
+  refreshFunctions: () => Promise<void>;
+  loadTasksForFunction: (functionId: string) => Promise<Task[]>;
+  createTask: (task: {
+    functionId: string; title: string; description?: string; dueDate?: string | null;
+    assignedTo?: string | null; assignedToName?: string | null;
+    priority: TaskPriority; status: TaskStatus;
+  }) => Promise<Task>;
+  updateTask: (taskId: string, updates: Partial<Task>) => Promise<Task>;
+  addSubtask: (taskId: string, title: string) => Promise<Subtask>;
+  toggleSubtask: (taskId: string, subtaskId: string, completed: boolean) => Promise<void>;
+  markNotificationRead: (id: string) => Promise<void>;
+  addNotification: (n: { userId: string; title: string; message: string; type: Notification["type"] }) => Promise<void>;
+  refreshNotifications: () => Promise<void>;
+  refreshParticipants: () => Promise<void>;
   unreadCount: number;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
 
-function generateId(): string {
-  return Date.now().toString() + Math.random().toString(36).substr(2, 9);
-}
-
-function generateEventCode(): string {
-  return Math.random().toString(36).substr(2, 6).toUpperCase();
-}
-
-const FUNCTION_PRESETS = [
-  { name: "Engagement", icon: "diamond-outline", color: "#9B59B6" },
-  { name: "Haldi", icon: "flower-outline", color: "#F39C12" },
-  { name: "Mehendi", icon: "leaf-outline", color: "#27AE60" },
-  { name: "Sangeet", icon: "musical-notes-outline", color: "#E91E63" },
-  { name: "Wedding Ceremony", icon: "heart-outline", color: "#C0392B" },
-  { name: "Reception", icon: "star-outline", color: "#D4A017" },
-];
-
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<User | null>(null);
-  const [events, setEvents] = useState<WeddingEvent[]>([]);
   const [currentEvent, setCurrentEventState] = useState<WeddingEvent | null>(null);
+  const [participants, setParticipants] = useState<ApiUser[]>([]);
   const [functions, setFunctions] = useState<WeddingFunction[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loadingFunctions, setLoadingFunctions] = useState(false);
+  const [loadingTasks, setLoadingTasks] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const eventIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const [u, e, ce, f, t, n] = await Promise.all([
+        const [u, ce] = await Promise.all([
           AsyncStorage.getItem("@vivah_user"),
-          AsyncStorage.getItem("@vivah_events"),
           AsyncStorage.getItem("@vivah_current_event"),
-          AsyncStorage.getItem("@vivah_functions"),
-          AsyncStorage.getItem("@vivah_tasks"),
-          AsyncStorage.getItem("@vivah_notifications"),
         ]);
         if (u) setUserState(JSON.parse(u));
-        if (e) setEvents(JSON.parse(e));
         if (ce) setCurrentEventState(JSON.parse(ce));
-        if (f) setFunctions(JSON.parse(f));
-        if (t) setTasks(JSON.parse(t));
-        if (n) setNotifications(JSON.parse(n));
       } catch {}
       setLoaded(true);
     })();
   }, []);
 
-  const persist = useCallback(async (key: string, value: unknown) => {
+  useEffect(() => {
+    if (!currentEvent || !user) return;
+    const eid = currentEvent.id;
+    if (eventIdRef.current === eid) return;
+    eventIdRef.current = eid;
+    loadFunctions(eid);
+    loadParticipants(eid);
+  }, [currentEvent?.id, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    loadNotifications(user.id);
+  }, [user?.id]);
+
+  const loadFunctions = async (eventId: string) => {
+    setLoadingFunctions(true);
     try {
-      await AsyncStorage.setItem(key, JSON.stringify(value));
+      const fns = await api.getFunctions(eventId);
+      setFunctions(fns);
+    } catch (e) {
+      console.error("loadFunctions error", e);
+    } finally {
+      setLoadingFunctions(false);
+    }
+  };
+
+  const loadParticipants = async (eventId: string) => {
+    try {
+      const p = await api.getParticipants(eventId);
+      setParticipants(p);
+    } catch (e) {
+      console.error("loadParticipants error", e);
+    }
+  };
+
+  const loadNotifications = async (userId: string) => {
+    try {
+      const n = await api.getNotifications(userId);
+      setNotifications(n);
+    } catch {}
+  };
+
+  const setUser = useCallback(async (u: User | null) => {
+    setUserState(u);
+    if (u) await AsyncStorage.setItem("@vivah_user", JSON.stringify(u));
+    else await AsyncStorage.removeItem("@vivah_user");
+  }, []);
+
+  const updateUserRole = useCallback(async (role: UserRole) => {
+    if (!user) return;
+    try {
+      const updated = await api.updateUser(user.id, { role });
+      const newUser = { ...user, role: updated.role };
+      setUserState(newUser);
+      await AsyncStorage.setItem("@vivah_user", JSON.stringify(newUser));
+    } catch (e) {
+      console.error("updateUserRole error", e);
+    }
+  }, [user]);
+
+  const setCurrentEvent = useCallback(async (ev: WeddingEvent | null) => {
+    setCurrentEventState(ev);
+    if (ev) await AsyncStorage.setItem("@vivah_current_event", JSON.stringify(ev));
+    else await AsyncStorage.removeItem("@vivah_current_event");
+  }, []);
+
+  const createEvent = useCallback(async (data: {
+    name: string; brideName: string; groomName: string;
+    weddingCity: string; weddingDate: string; description?: string;
+  }): Promise<WeddingEvent> => {
+    if (!user) throw new Error("Not logged in");
+    const event = await api.createEvent({ ...data, managerId: user.id });
+    await setCurrentEvent(event);
+    eventIdRef.current = null;
+    return event;
+  }, [user, setCurrentEvent]);
+
+  const joinEvent = useCallback(async (code: string): Promise<WeddingEvent> => {
+    if (!user) throw new Error("Not logged in");
+    const event = await api.joinEvent({ eventCode: code, userId: user.id });
+    await setCurrentEvent(event);
+    eventIdRef.current = null;
+    return event;
+  }, [user, setCurrentEvent]);
+
+  const createFunction = useCallback(async (fn: {
+    name: string; date?: string | null; description?: string; icon: string; color: string;
+  }): Promise<WeddingFunction> => {
+    if (!currentEvent) throw new Error("No event selected");
+    const created = await api.createFunction({ ...fn, eventId: currentEvent.id });
+    setFunctions((prev) => [...prev, created]);
+    return created;
+  }, [currentEvent]);
+
+  const refreshFunctions = useCallback(async () => {
+    if (!currentEvent) return;
+    await loadFunctions(currentEvent.id);
+  }, [currentEvent]);
+
+  const loadTasksForFunction = useCallback(async (functionId: string): Promise<Task[]> => {
+    setLoadingTasks(true);
+    try {
+      const t = await api.getTasks({ functionId });
+      setTasks((prev) => {
+        const without = prev.filter((x) => x.functionId !== functionId);
+        return [...without, ...t];
+      });
+      return t;
+    } finally {
+      setLoadingTasks(false);
+    }
+  }, []);
+
+  const createTask = useCallback(async (task: {
+    functionId: string; title: string; description?: string; dueDate?: string | null;
+    assignedTo?: string | null; assignedToName?: string | null;
+    priority: TaskPriority; status: TaskStatus;
+  }): Promise<Task> => {
+    const created = await api.createTask({ description: "", ...task });
+    setTasks((prev) => [...prev, created]);
+    return created;
+  }, []);
+
+  const updateTask = useCallback(async (taskId: string, updates: Partial<Task>): Promise<Task> => {
+    const updated = await api.updateTask(taskId, updates);
+    setTasks((prev) => prev.map((t) => t.id === taskId ? updated : t));
+    return updated;
+  }, []);
+
+  const addSubtask = useCallback(async (taskId: string, title: string): Promise<Subtask> => {
+    const subtask = await api.addSubtask(taskId, title);
+    setTasks((prev) => prev.map((t) => {
+      if (t.id !== taskId) return t;
+      return { ...t, subtasks: [...t.subtasks, subtask] };
+    }));
+    return subtask;
+  }, []);
+
+  const toggleSubtask = useCallback(async (taskId: string, subtaskId: string, completed: boolean) => {
+    await api.toggleSubtask(subtaskId, completed);
+    setTasks((prev) => prev.map((t) => {
+      if (t.id !== taskId) return t;
+      return {
+        ...t,
+        subtasks: t.subtasks.map((st) => st.id === subtaskId ? { ...st, completed } : st),
+      };
+    }));
+  }, []);
+
+  const addNotification = useCallback(async (n: {
+    userId: string; title: string; message: string; type: Notification["type"];
+  }) => {
+    try {
+      const created = await api.createNotification(n);
+      setNotifications((prev) => [created, ...prev]);
     } catch {}
   }, []);
 
-  const setUser = useCallback((u: User | null) => {
-    setUserState(u);
-    persist("@vivah_user", u);
-  }, [persist]);
+  const markNotificationRead = useCallback(async (id: string) => {
+    try {
+      await api.markNotifRead(id);
+      setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
+    } catch {}
+  }, []);
 
-  const setCurrentEvent = useCallback((ev: WeddingEvent | null) => {
-    setCurrentEventState(ev);
-    persist("@vivah_current_event", ev);
-  }, [persist]);
+  const refreshNotifications = useCallback(async () => {
+    if (!user) return;
+    await loadNotifications(user.id);
+  }, [user]);
 
-  const createEvent = useCallback((eventData: Omit<WeddingEvent, "id" | "eventCode" | "participants" | "createdAt">): WeddingEvent => {
-    const newEvent: WeddingEvent = {
-      ...eventData,
-      id: generateId(),
-      eventCode: generateEventCode(),
-      participants: [],
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [...events, newEvent];
-    setEvents(updated);
-    persist("@vivah_events", updated);
-    setCurrentEvent(newEvent);
-
-    const defaultFunctions: WeddingFunction[] = FUNCTION_PRESETS.map((preset) => ({
-      id: generateId(),
-      eventId: newEvent.id,
-      name: preset.name,
-      date: null,
-      description: "",
-      icon: preset.icon,
-      color: preset.color,
-      createdAt: new Date().toISOString(),
-    }));
-    const updatedFunctions = [...functions, ...defaultFunctions];
-    setFunctions(updatedFunctions);
-    persist("@vivah_functions", updatedFunctions);
-
-    return newEvent;
-  }, [events, functions, persist, setCurrentEvent]);
-
-  const joinEvent = useCallback((code: string): WeddingEvent | null => {
-    const found = events.find((e) => e.eventCode === code.toUpperCase());
-    if (found) {
-      setCurrentEvent(found);
-      return found;
-    }
-    return null;
-  }, [events, setCurrentEvent]);
-
-  const createFunction = useCallback((fnData: Omit<WeddingFunction, "id" | "createdAt">): WeddingFunction => {
-    const newFn: WeddingFunction = {
-      ...fnData,
-      id: generateId(),
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [...functions, newFn];
-    setFunctions(updated);
-    persist("@vivah_functions", updated);
-    return newFn;
-  }, [functions, persist]);
-
-  const createTask = useCallback((taskData: Omit<Task, "id" | "createdAt">): Task => {
-    const newTask: Task = {
-      ...taskData,
-      id: generateId(),
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [...tasks, newTask];
-    setTasks(updated);
-    persist("@vivah_tasks", updated);
-    return newTask;
-  }, [tasks, persist]);
-
-  const updateTask = useCallback((taskId: string, updates: Partial<Task>) => {
-    const updated = tasks.map((t) => t.id === taskId ? { ...t, ...updates } : t);
-    setTasks(updated);
-    persist("@vivah_tasks", updated);
-  }, [tasks, persist]);
-
-  const updateSubtask = useCallback((taskId: string, subtaskId: string, completed: boolean) => {
-    const updated = tasks.map((t) => {
-      if (t.id !== taskId) return t;
-      return {
-        ...t,
-        subtasks: t.subtasks.map((st) =>
-          st.id === subtaskId ? { ...st, completed } : st
-        ),
-      };
-    });
-    setTasks(updated);
-    persist("@vivah_tasks", updated);
-  }, [tasks, persist]);
-
-  const addSubtask = useCallback((taskId: string, title: string) => {
-    const updated = tasks.map((t) => {
-      if (t.id !== taskId) return t;
-      return {
-        ...t,
-        subtasks: [
-          ...t.subtasks,
-          { id: generateId(), title, completed: false },
-        ],
-      };
-    });
-    setTasks(updated);
-    persist("@vivah_tasks", updated);
-  }, [tasks, persist]);
-
-  const addNotification = useCallback((n: Omit<Notification, "id" | "createdAt" | "read">) => {
-    const newN: Notification = {
-      ...n,
-      id: generateId(),
-      read: false,
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [newN, ...notifications].slice(0, 50);
-    setNotifications(updated);
-    persist("@vivah_notifications", updated);
-  }, [notifications, persist]);
-
-  const markNotificationRead = useCallback((id: string) => {
-    const updated = notifications.map((n) =>
-      n.id === id ? { ...n, read: true } : n
-    );
-    setNotifications(updated);
-    persist("@vivah_notifications", updated);
-  }, [notifications, persist]);
+  const refreshParticipants = useCallback(async () => {
+    if (!currentEvent) return;
+    await loadParticipants(currentEvent.id);
+  }, [currentEvent]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -284,21 +275,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         setUser,
-        events,
+        updateUserRole,
         currentEvent,
         setCurrentEvent,
+        participants,
         functions,
         tasks,
         notifications,
+        loadingFunctions,
+        loadingTasks,
         createEvent,
         joinEvent,
         createFunction,
+        refreshFunctions,
+        loadTasksForFunction,
         createTask,
         updateTask,
-        updateSubtask,
         addSubtask,
+        toggleSubtask,
         markNotificationRead,
         addNotification,
+        refreshNotifications,
+        refreshParticipants,
         unreadCount,
       }}
     >

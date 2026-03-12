@@ -2,8 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -23,27 +24,36 @@ export default function JoinEventScreen() {
   const { joinEvent } = useApp();
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const shake = useSharedValue(0);
 
   const shakeStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shake.value }] }));
 
-  const handleJoin = () => {
+  const triggerShake = () => {
+    shake.value = withSequence(
+      withTiming(-10, { duration: 50 }),
+      withTiming(10, { duration: 50 }),
+      withTiming(-10, { duration: 50 }),
+      withTiming(10, { duration: 50 }),
+      withTiming(0, { duration: 50 })
+    );
+  };
+
+  const handleJoin = async () => {
+    if (code.length < 6 || loading) return;
     setError("");
-    const result = joinEvent(code.toUpperCase().trim());
-    if (result) {
+    setLoading(true);
+    try {
+      await joinEvent(code.toUpperCase().trim());
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.dismissAll();
       router.replace("/(tabs)");
-    } else {
+    } catch {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setError("No event found with this code. Check and try again.");
-      shake.value = withSequence(
-        withTiming(-10, { duration: 50 }),
-        withTiming(10, { duration: 50 }),
-        withTiming(-10, { duration: 50 }),
-        withTiming(10, { duration: 50 }),
-        withTiming(0, { duration: 50 })
-      );
+      triggerShake();
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -78,23 +88,26 @@ export default function JoinEventScreen() {
               maxLength={6}
               returnKeyType="done"
               onSubmitEditing={handleJoin}
+              underlineColorAndroid="transparent"
             />
           </Animated.View>
 
-          {error ? (
-            <Text style={styles.errorText}>{error}</Text>
-          ) : null}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <Pressable
             style={({ pressed }) => [
               styles.joinBtn,
-              code.length < 6 && styles.joinBtnDisabled,
+              (code.length < 6 || loading) && styles.joinBtnDisabled,
               { opacity: pressed && code.length === 6 ? 0.85 : 1 },
             ]}
             onPress={handleJoin}
-            disabled={code.length < 6}
+            disabled={code.length < 6 || loading}
           >
-            <Text style={styles.joinBtnText}>Join Event</Text>
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.joinBtnText}>Join Event</Text>
+            )}
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -132,7 +145,8 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     textAlign: "center",
     letterSpacing: 6,
-  },
+    outlineWidth: 0,
+  } as any,
   errorText: { fontFamily: "Inter_400Regular", fontSize: 13, color: Colors.error, textAlign: "center" },
   joinBtn: {
     backgroundColor: Colors.primary,

@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Modal,
   Platform,
   Pressable,
@@ -39,13 +40,14 @@ const PRIORITY_COLORS: Record<TaskPriority, string> = {
 export default function TaskDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { tasks, functions, updateTask, updateSubtask, addSubtask, addNotification, user } = useApp();
+  const { tasks, functions, updateTask, addSubtask, toggleSubtask, addNotification, user, participants } = useApp();
   const [showAssign, setShowAssign] = useState(false);
   const [showAddSubtask, setShowAddSubtask] = useState(false);
-  const [assignName, setAssignName] = useState("");
   const [newSubtask, setNewSubtask] = useState("");
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [saving, setSaving] = useState(false);
 
+  const isManager = user?.role === "manager";
   const task = tasks.find((t) => t.id === id);
   const fn = task ? functions.find((f) => f.id === task.functionId) : null;
 
@@ -63,42 +65,69 @@ export default function TaskDetailScreen() {
   const completedSubtasks = task.subtasks.filter((s) => s.completed).length;
   const subtaskProgress = task.subtasks.length > 0 ? completedSubtasks / task.subtasks.length : 0;
 
-  const handleStatusChange = (status: TaskStatus) => {
-    updateTask(task.id, { status });
-    addNotification({
-      title: "Task Updated",
-      message: `"${task.title}" is now ${STATUS_LABELS[status]}`,
-      type: "status_change",
-    });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setShowStatusMenu(false);
+  const handleStatusChange = async (status: TaskStatus) => {
+    setSaving(true);
+    try {
+      await updateTask(task.id, { status });
+      if (user) {
+        await addNotification({
+          userId: user.id,
+          title: "Task Updated",
+          message: `"${task.title}" is now ${STATUS_LABELS[status]}`,
+          type: "status_change",
+        });
+      }
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } finally {
+      setSaving(false);
+      setShowStatusMenu(false);
+    }
   };
 
-  const handleAssign = () => {
-    if (!assignName.trim()) return;
-    updateTask(task.id, { assignedToName: assignName.trim(), assignedTo: assignName.trim().toLowerCase() });
-    addNotification({
-      title: "Task Assigned",
-      message: `"${task.title}" has been assigned to ${assignName.trim()}`,
-      type: "task_assigned",
-    });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setShowAssign(false);
-    setAssignName("");
+  const handleAssign = async (participantId: string, participantName: string) => {
+    setSaving(true);
+    try {
+      await updateTask(task.id, { assignedTo: participantId, assignedToName: participantName });
+      await addNotification({
+        userId: participantId,
+        title: "Task Assigned to You",
+        message: `"${task.title}" has been assigned to you in ${fn.name}`,
+        type: "task_assigned",
+      });
+      if (user) {
+        await addNotification({
+          userId: user.id,
+          title: "Task Assigned",
+          message: `"${task.title}" assigned to ${participantName}`,
+          type: "task_assigned",
+        });
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } finally {
+      setSaving(false);
+      setShowAssign(false);
+    }
   };
 
-  const handleAddSubtask = () => {
-    if (!newSubtask.trim()) return;
-    addSubtask(task.id, newSubtask.trim());
+  const handleAddSubtask = async () => {
+    if (!newSubtask.trim() || saving) return;
+    setSaving(true);
+    try {
+      await addSubtask(task.id, newSubtask.trim());
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setShowAddSubtask(false);
+      setNewSubtask("");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleSubtask = async (subtaskId: string, completed: boolean) => {
+    await toggleSubtask(task.id, subtaskId, !completed);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShowAddSubtask(false);
-    setNewSubtask("");
   };
 
-  const toggleSubtask = (subtaskId: string, completed: boolean) => {
-    updateSubtask(task.id, subtaskId, !completed);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  };
+  const participantsList = participants.filter((p) => p.role === "participant");
 
   return (
     <View style={styles.container}>
@@ -159,9 +188,11 @@ export default function TaskDetailScreen() {
             <Ionicons name="person-outline" size={16} color={Colors.textMuted} />
             <Text style={styles.detailLabel}>Assigned to</Text>
             <Text style={styles.detailValue}>{task.assignedToName ?? "Unassigned"}</Text>
-            <Pressable onPress={() => setShowAssign(true)}>
-              <Ionicons name="pencil-outline" size={16} color={Colors.primary} />
-            </Pressable>
+            {isManager && (
+              <Pressable onPress={() => setShowAssign(true)}>
+                <Ionicons name="pencil-outline" size={16} color={Colors.primary} />
+              </Pressable>
+            )}
           </View>
           {task.dueDate && (
             <View style={styles.detailRow}>
@@ -182,10 +213,7 @@ export default function TaskDetailScreen() {
                 <Text style={styles.subtaskCount}>{completedSubtasks}/{task.subtasks.length} done</Text>
               )}
             </View>
-            <Pressable
-              style={styles.addSubtaskBtn}
-              onPress={() => setShowAddSubtask(true)}
-            >
+            <Pressable style={styles.addSubtaskBtn} onPress={() => setShowAddSubtask(true)}>
               <Ionicons name="add" size={18} color={Colors.primary} />
             </Pressable>
           </View>
@@ -205,7 +233,7 @@ export default function TaskDetailScreen() {
               <Animated.View key={st.id} entering={FadeInDown.delay(i * 30)}>
                 <Pressable
                   style={styles.subtaskItem}
-                  onPress={() => toggleSubtask(st.id, st.completed)}
+                  onPress={() => handleToggleSubtask(st.id, st.completed)}
                 >
                   <View style={[styles.checkbox, st.completed && styles.checkboxDone]}>
                     {st.completed && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
@@ -220,20 +248,29 @@ export default function TaskDetailScreen() {
         </View>
 
         <View style={styles.actionRow}>
-          <Pressable
-            style={({ pressed }) => [styles.actionBtn, { opacity: pressed ? 0.8 : 1 }]}
-            onPress={() => setShowAssign(true)}
-          >
-            <Ionicons name="person-add-outline" size={18} color={Colors.primary} />
-            <Text style={styles.actionBtnText}>Reassign</Text>
-          </Pressable>
+          {isManager && (
+            <Pressable
+              style={({ pressed }) => [styles.actionBtn, { opacity: pressed ? 0.8 : 1 }]}
+              onPress={() => setShowAssign(true)}
+            >
+              <Ionicons name="person-add-outline" size={18} color={Colors.primary} />
+              <Text style={styles.actionBtnText}>Reassign</Text>
+            </Pressable>
+          )}
           {task.status !== "completed" && (
             <Pressable
-              style={({ pressed }) => [styles.completeBtn, { opacity: pressed ? 0.85 : 1 }]}
+              style={({ pressed }) => [styles.completeBtn, { flex: isManager ? 2 : 1, opacity: pressed ? 0.85 : 1 }]}
               onPress={() => handleStatusChange("completed")}
+              disabled={saving}
             >
-              <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
-              <Text style={styles.completeBtnText}>Mark Complete</Text>
+              {saving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.completeBtnText}>Mark Complete</Text>
+                </>
+              )}
             </Pressable>
           )}
         </View>
@@ -266,21 +303,31 @@ export default function TaskDetailScreen() {
           <Pressable style={[styles.statusSheet, { paddingBottom: insets.bottom + 20 }]}>
             <View style={styles.grabber} />
             <Text style={styles.sheetTitle}>Assign Task</Text>
-            <TextInput
-              style={styles.sheetInput}
-              placeholder="Enter person's name"
-              value={assignName}
-              onChangeText={setAssignName}
-              placeholderTextColor={Colors.textMuted}
-              autoFocus
-            />
-            <Pressable
-              style={[styles.sheetBtn, !assignName.trim() && { opacity: 0.4 }]}
-              onPress={handleAssign}
-              disabled={!assignName.trim()}
-            >
-              <Text style={styles.sheetBtnText}>Assign</Text>
-            </Pressable>
+            {participantsList.length === 0 ? (
+              <Text style={styles.noParticipantsText}>No helpers have joined this event yet. Share the event code with them.</Text>
+            ) : (
+              <View style={{ gap: 10 }}>
+                {participantsList.map((p) => (
+                  <Pressable
+                    key={p.id}
+                    style={[
+                      styles.participantOption,
+                      task.assignedTo === p.id && styles.participantOptionActive,
+                    ]}
+                    onPress={() => handleAssign(p.id, p.name)}
+                    disabled={saving}
+                  >
+                    <View style={styles.participantAvatar}>
+                      <Text style={styles.participantAvatarText}>{p.name.charAt(0).toUpperCase()}</Text>
+                    </View>
+                    <Text style={styles.participantName}>{p.name}</Text>
+                    {task.assignedTo === p.id && (
+                      <Ionicons name="checkmark" size={18} color={Colors.primary} />
+                    )}
+                  </Pressable>
+                ))}
+              </View>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -299,13 +346,14 @@ export default function TaskDetailScreen() {
               autoFocus
               returnKeyType="done"
               onSubmitEditing={handleAddSubtask}
+              underlineColorAndroid="transparent"
             />
             <Pressable
-              style={[styles.sheetBtn, !newSubtask.trim() && { opacity: 0.4 }]}
+              style={[styles.sheetBtn, (!newSubtask.trim() || saving) && { opacity: 0.4 }]}
               onPress={handleAddSubtask}
-              disabled={!newSubtask.trim()}
+              disabled={!newSubtask.trim() || saving}
             >
-              <Text style={styles.sheetBtnText}>Add</Text>
+              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Add</Text>}
             </Pressable>
           </Pressable>
         </Pressable>
@@ -423,7 +471,6 @@ const styles = StyleSheet.create({
   },
   actionBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: Colors.primary },
   completeBtn: {
-    flex: 2,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -453,6 +500,39 @@ const styles = StyleSheet.create({
   },
   statusOptionActive: { backgroundColor: Colors.background },
   statusOptionText: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 15, color: Colors.textSecondary },
+  noParticipantsText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    color: Colors.textMuted,
+    textAlign: "center",
+    lineHeight: 22,
+    paddingVertical: 8,
+  },
+  participantOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+  },
+  participantOptionActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + "10",
+  },
+  participantAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  participantAvatarText: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#FFFFFF" },
+  participantName: { flex: 1, fontFamily: "Inter_600SemiBold", fontSize: 15, color: Colors.text },
   sheetInput: {
     fontFamily: "Inter_400Regular",
     fontSize: 15,
@@ -463,7 +543,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     paddingHorizontal: 16,
     paddingVertical: 14,
-  },
+    outlineWidth: 0,
+  } as any,
   sheetBtn: {
     backgroundColor: Colors.primary,
     paddingVertical: 16,

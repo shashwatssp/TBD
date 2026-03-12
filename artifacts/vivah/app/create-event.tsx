@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -48,6 +49,7 @@ function Field({ label, value, onChangeText, placeholder, icon, keyboardType = "
           autoCapitalize={autoCapitalize}
           multiline={multiline}
           numberOfLines={multiline ? 3 : 1}
+          underlineColorAndroid="transparent"
         />
       </View>
     </View>
@@ -70,8 +72,8 @@ const fieldStyles = StyleSheet.create({
   },
   inputFocused: { borderColor: Colors.primary },
   icon: { marginTop: 2 },
-  input: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 15, color: Colors.text },
-  multiline: { minHeight: 72, textAlignVertical: "top" },
+  input: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 15, color: Colors.text, outlineWidth: 0 } as any,
+  multiline: { minHeight: 72, textAlignVertical: "top" } as any,
 });
 
 export default function CreateEventScreen() {
@@ -90,21 +92,29 @@ export default function CreateEventScreen() {
 
   const set = (key: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [key]: v }));
 
-  const handleCreate = () => {
-    if (!isValid || !user) return;
+  const [loading, setLoading] = useState(false);
+
+  const handleCreate = async () => {
+    if (!isValid || !user || loading) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const eventName = form.name.trim() || `${form.brideName} & ${form.groomName} Wedding`;
-    createEvent({
-      name: eventName,
-      brideName: form.brideName.trim(),
-      groomName: form.groomName.trim(),
-      weddingCity: form.weddingCity.trim(),
-      weddingDate: form.weddingDate.trim(),
-      description: form.description.trim(),
-      managerId: user.id,
-    });
-    router.dismissAll();
-    router.replace("/(tabs)");
+    setLoading(true);
+    try {
+      const eventName = form.name.trim() || `${form.brideName} & ${form.groomName} Wedding`;
+      await createEvent({
+        name: eventName,
+        brideName: form.brideName.trim(),
+        groomName: form.groomName.trim(),
+        weddingCity: form.weddingCity.trim(),
+        weddingDate: form.weddingDate.trim(),
+        description: form.description.trim(),
+      });
+      router.dismissAll();
+      router.replace("/(tabs)");
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -197,14 +207,20 @@ export default function CreateEventScreen() {
           <Pressable
             style={({ pressed }) => [
               styles.createBtn,
-              !isValid && styles.createBtnDisabled,
+              (!isValid || loading) && styles.createBtnDisabled,
               { opacity: pressed && !!isValid ? 0.85 : 1 },
             ]}
             onPress={handleCreate}
-            disabled={!isValid}
+            disabled={!isValid || loading}
           >
-            <Ionicons name="heart-outline" size={20} color="#FFFFFF" />
-            <Text style={styles.createBtnText}>Create Wedding Event</Text>
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="heart-outline" size={20} color="#FFFFFF" />
+                <Text style={styles.createBtnText}>Create Wedding Event</Text>
+              </>
+            )}
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
