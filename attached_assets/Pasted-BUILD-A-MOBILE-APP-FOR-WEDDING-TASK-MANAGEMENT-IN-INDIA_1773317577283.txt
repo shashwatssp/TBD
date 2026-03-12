@@ -1,0 +1,158 @@
+BUILD A MOBILE APP FOR WEDDING TASK MANAGEMENT IN INDIA
+
+Goal:
+Create a very simple Android mobile application that helps families and friends coordinate tasks for Indian weddings. Indian weddings involve many rituals and functions, and people often live in different cities. The app should help track tasks, assign responsibilities, and monitor progress easily.
+
+Target Users:
+Urban young people (age 22–40) who are organizing or helping organize a wedding in India. Friends and family members may live in different cities and need a simple way to coordinate wedding arrangements.
+
+Tech:
+Generate the app using Flutter so it can run on Android easily. Focus on clean UI, simple flows, and easy navigation.
+
+Core Concept:
+One wedding event can have many functions (rituals). Each function has tasks and subtasks. Tasks are assigned to people and their status can be updated.
+
+Key Roles:
+Manager (event owner)
+Participants (friends/family helping with tasks)
+
+Core Features:
+
+User Authentication
+
+* Phone number login with OTP
+* Basic profile (name, phone number)
+
+Create Wedding Event
+
+* Event name
+* Bride name
+* Groom name
+* Wedding city
+* Wedding date
+* Optional description
+
+Event Functions
+Allow adding multiple wedding functions such as:
+
+* Engagement
+* Haldi
+* Mehendi
+* Sangeet
+* Wedding Ceremony
+* Reception
+
+Users should also be able to create custom functions.
+
+Task Management
+Each function can contain tasks such as:
+
+* Book photographer
+* Arrange decorations
+* Book venue
+* Arrange transport
+* Manage guest list
+* Arrange catering
+
+Each task should allow:
+
+* description
+* due date
+* assigned person
+* priority level
+* status
+
+Task Status
+Statuses should include:
+
+* Not Started
+* In Progress
+* Completed
+
+Subtasks
+Each task can contain subtasks. Example:
+
+Task: Book photographer
+Subtasks:
+
+* Research photographers
+* Compare pricing
+* Finalize booking
+* Pay advance
+
+Task Assignment
+Manager can:
+
+* assign tasks
+* reassign tasks
+* set deadlines
+
+Participants can:
+
+* update task status
+* mark subtasks complete
+
+Notifications
+Push notifications should notify users when:
+
+* a task is assigned
+* a task deadline is near
+* a task status changes
+* a new function is added
+
+Dashboard
+Provide a simple dashboard showing:
+
+* overall wedding progress
+* number of tasks completed
+* upcoming deadlines
+* pending tasks
+
+UI/UX Requirements
+The UI must be extremely simple and intuitive.
+
+Requirements:
+
+* minimal screens
+* clear icons
+* large buttons
+* easy navigation
+* mobile-first design
+* clean modern design
+
+Screens Required:
+
+1. Login screen
+2. Create event screen
+3. Event dashboard
+4. Function list screen
+5. Task list screen
+6. Task detail screen
+7. Assign task screen
+8. Notifications screen
+
+Collaboration
+Multiple users should be able to join the same wedding event using an invite link or event code.
+
+Data Model
+Entities:
+User
+Event
+Function
+Task
+Subtask
+Assignment
+
+Each entity should have appropriate relationships.
+
+Output Requirements
+Generate a working Flutter mobile application with:
+
+* clean project structure
+* modular code
+* simple state management
+* ready to export
+
+The app should focus on simplicity and usability rather than too many features.
+
+Priority: Make the app extremely easy to use for non-technical family members.
