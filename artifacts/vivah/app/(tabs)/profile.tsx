@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect } from "react";
 import {
   Alert,
   Platform,
@@ -20,7 +20,14 @@ import { useApp } from "@/context/AppContext";
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, setUser, currentEvent, setCurrentEvent, events } = useApp();
+  const { user, setUser, currentEvent, setCurrentEvent, participants, refreshParticipants } = useApp();
+  const isManager = user?.role === "manager";
+
+  useEffect(() => {
+    if (currentEvent) {
+      refreshParticipants();
+    }
+  }, [currentEvent?.id]);
 
   const handleShare = async () => {
     if (!currentEvent) return;
@@ -123,18 +130,41 @@ export default function ProfileScreen() {
           </Animated.View>
         )}
 
+        {isManager && currentEvent && participants.filter((p) => p.role === "participant").length > 0 && (
+          <Animated.View entering={FadeInDown.delay(130).duration(500)} style={styles.section}>
+            <Text style={styles.sectionTitle}>Team Helpers ({participants.filter((p) => p.role === "participant").length})</Text>
+            <View style={styles.menuList}>
+              {participants.filter((p) => p.role === "participant").map((p) => (
+                <View key={p.id} style={styles.participantItem}>
+                  <View style={styles.participantAvatar}>
+                    <Text style={styles.participantInitials}>{p.name.charAt(0).toUpperCase()}</Text>
+                  </View>
+                  <View style={styles.participantInfo}>
+                    <Text style={styles.participantName}>{p.name}</Text>
+                    <Text style={styles.participantPhone}>{p.phone}</Text>
+                  </View>
+                  <View style={styles.helperBadge}>
+                    <Text style={styles.helperBadgeText}>Helper</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </Animated.View>
+        )}
+
         <Animated.View entering={FadeInDown.delay(150).duration(500)} style={styles.section}>
           <Text style={styles.sectionTitle}>Actions</Text>
           <View style={styles.menuList}>
-            <Pressable
-              style={({ pressed }) => [styles.menuItem, { opacity: pressed ? 0.8 : 1 }]}
-              onPress={() => router.push("/create-event")}
-            >
-              <Ionicons name="add-circle-outline" size={22} color={Colors.primary} />
-              <Text style={styles.menuLabel}>Create New Event</Text>
-              <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
-            </Pressable>
-
+            {isManager && (
+              <Pressable
+                style={({ pressed }) => [styles.menuItem, { opacity: pressed ? 0.8 : 1 }]}
+                onPress={() => router.push("/create-event")}
+              >
+                <Ionicons name="add-circle-outline" size={22} color={Colors.primary} />
+                <Text style={styles.menuLabel}>Create New Event</Text>
+                <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+              </Pressable>
+            )}
             <Pressable
               style={({ pressed }) => [styles.menuItem, { opacity: pressed ? 0.8 : 1 }]}
               onPress={() => router.push("/join-event")}
@@ -143,33 +173,6 @@ export default function ProfileScreen() {
               <Text style={styles.menuLabel}>Join Event with Code</Text>
               <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
             </Pressable>
-
-            {events.length > 1 && (
-              <View>
-                <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Switch Event</Text>
-                {events.map((ev) => (
-                  <Pressable
-                    key={ev.id}
-                    style={({ pressed }) => [
-                      styles.menuItem,
-                      currentEvent?.id === ev.id && styles.menuItemActive,
-                      { opacity: pressed ? 0.8 : 1 },
-                    ]}
-                    onPress={() => {
-                      setCurrentEvent(ev);
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    }}
-                  >
-                    <Ionicons
-                      name={currentEvent?.id === ev.id ? "radio-button-on-outline" : "radio-button-off-outline"}
-                      size={20}
-                      color={currentEvent?.id === ev.id ? Colors.primary : Colors.textMuted}
-                    />
-                    <Text style={styles.menuLabel}>{ev.brideName} & {ev.groomName}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
           </View>
         </Animated.View>
 
@@ -272,6 +275,40 @@ const styles = StyleSheet.create({
   },
   menuItemActive: { borderWidth: 1.5, borderColor: Colors.primary + "40" },
   menuLabel: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 15, color: Colors.text },
+  participantItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    padding: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  participantAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  participantInitials: { fontFamily: "Inter_700Bold", fontSize: 18, color: "#FFFFFF" },
+  participantInfo: { flex: 1, gap: 2 },
+  participantName: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: Colors.text },
+  participantPhone: { fontFamily: "Inter_400Regular", fontSize: 12, color: Colors.textMuted },
+  helperBadge: {
+    backgroundColor: Colors.gold + "20",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: Colors.gold + "40",
+  },
+  helperBadgeText: { fontFamily: "Inter_600SemiBold", fontSize: 11, color: Colors.gold },
   logoutBtn: {
     flexDirection: "row",
     alignItems: "center",
