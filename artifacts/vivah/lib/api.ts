@@ -1,15 +1,31 @@
-const BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+// Use IP address directly for local development
+const BASE = `http://192.168.0.4:3000/api`;
 
 async function req<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...opts,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(err.error || "Request failed");
+  const url = `${BASE}${path}`;
+  console.log(`[API Request] ${opts?.method || 'GET'} ${url}`);
+  console.log(`[API Request] Body: ${opts?.body || 'none'}`);
+  
+  try {
+    const res = await fetch(url, {
+      headers: { "Content-Type": "application/json" },
+      ...opts,
+    });
+    
+    console.log(`[API Response] Status: ${res.status} ${res.statusText}`);
+    
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Request failed" }));
+      console.error(`[API Error]`, err);
+      throw new Error(err.error || "Request failed");
+    }
+    const data = await res.json();
+    console.log(`[API Success]`, data);
+    return data;
+  } catch (error) {
+    console.error(`[API Fetch Error]`, error);
+    throw error;
   }
-  return res.json();
 }
 
 export type UserRole = "manager" | "participant";

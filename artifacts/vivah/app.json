@@ -17,6 +17,7 @@
       "supportsTablet": false
     },
     "android": {
+      "package": "com.shashwatssp.vivah",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#1A0505"
@@ -38,6 +39,11 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "5fcc1f25-7aa3-4bd4-b595-fc1e518a4a1b"
+      }
     }
   }
 }
