@@ -201,6 +201,23 @@ export const joinEvent = async (eventCode: string, userId: string): Promise<Fire
     joinedAt: serverTimestamp()
   });
   
+  // Get user details for notification
+  const userRef = doc(db, 'users', userId);
+  const userDoc = await getDoc(userRef);
+  const userData = userDoc.data();
+  const userName = userData?.name || 'A helper';
+  
+  // Create notification for the manager
+  const notificationsRef = collection(db, 'notifications');
+  await addDoc(notificationsRef, {
+    userId: eventData.managerId,
+    title: 'New Helper Joined',
+    message: `${userName} has joined your wedding event!`,
+    type: 'task_assigned',
+    read: false,
+    createdAt: serverTimestamp()
+  });
+  
   return {
     ...eventData,
     id: eventDoc.id

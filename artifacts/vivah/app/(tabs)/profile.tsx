@@ -49,9 +49,31 @@ export default function ProfileScreen() {
         {
           text: "Logout",
           style: "destructive",
-          onPress: () => {
-            setUser(null);
-            router.replace("/");
+          onPress: async () => {
+            try {
+              console.log("Starting logout process for user:", user?.id, "role:", user?.role);
+              
+              // Clear user and event state
+              await setUser(null);
+              console.log("User state cleared");
+              
+              await setCurrentEvent(null);
+              console.log("Event state cleared");
+              
+              // Navigate to welcome screen
+              console.log("Navigating to welcome screen");
+              router.replace("/index");
+              
+              // Force navigation after a short delay to ensure it happens
+              setTimeout(() => {
+                console.log("Forcing navigation to welcome screen");
+                router.replace("/index");
+              }, 100);
+            } catch (error) {
+              console.error("Logout error:", error);
+              // Even if there's an error, try to navigate to welcome screen
+              router.replace("/index");
+            }
           },
         },
       ]

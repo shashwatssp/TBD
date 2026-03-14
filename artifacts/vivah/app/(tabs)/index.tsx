@@ -7,6 +7,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -38,10 +39,43 @@ function StatCard({ label, value, icon, color }: { label: string; value: number 
 
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
-  const { user, currentEvent, functions, tasks } = useApp();
+  const { user, currentEvent, functions, tasks, participants, refreshParticipants, refreshFunctions, refreshNotifications } = useApp();
   const [myTasks, setMyTasks] = useState<Task[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const isParticipant = user?.role === "participant";
+
+  const handleShare = async () => {
+    if (!currentEvent) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await Share.share({
+        message: `Join our wedding event on Vivah! Use code: ${currentEvent.eventCode}\n\n${currentEvent.brideName} & ${currentEvent.groomName} | ${currentEvent.weddingCity}`,
+      });
+    } catch {}
+  };
+
+  const handleRefresh = async () => {
+    if (!currentEvent) return;
+    setIsRefreshing(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await Promise.all([
+        refreshParticipants(),
+        refreshFunctions(),
+        refreshNotifications(),
+      ]);
+      // Refresh participant's tasks
+      if (isParticipant && user) {
+        const t = await getTasks({ assignedTo: user.id, eventId: currentEvent.id });
+        setMyTasks(t);
+      }
+    } catch (error) {
+      console.error("Error refreshing data:", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     if (isParticipant && user && currentEvent) {
@@ -66,6 +100,9 @@ export default function DashboardScreen() {
   const inProgressTasks = eventTasks.filter((t) => t.status === "in_progress").length;
   const pendingTasks = eventTasks.filter((t) => t.status === "not_started").length;
   const progress = totalTasks > 0 ? completedTasks / totalTasks : 0;
+  
+  // Count helpers (participants excluding the manager)
+  const helpersCount = participants.filter(p => p.role === "participant").length;
 
   const upcomingTasks = useMemo(
     () =>
@@ -102,18 +139,37 @@ export default function DashboardScreen() {
               <Text style={styles.greeting}>Namaste,</Text>
               <Text style={styles.userName}>{user.name}</Text>
             </View>
-            {currentEvent && !isParticipant && (
-              <View style={styles.codeChip}>
-                <Ionicons name="share-outline" size={14} color={Colors.gold} />
-                <Text style={styles.codeText}>{currentEvent.eventCode}</Text>
-              </View>
-            )}
-            {isParticipant && (
-              <View style={[styles.codeChip, { backgroundColor: "rgba(212,160,23,0.08)" }]}>
-                <Ionicons name="hand-left-outline" size={14} color={Colors.gold} />
-                <Text style={styles.codeText}>Helper</Text>
-              </View>
-            )}
+            <View style={styles.headerActions}>
+              {currentEvent && (
+                <Pressable
+                  style={({ pressed }) => [styles.refreshBtn, { opacity: pressed ? 0.8 : 1 }]}
+                  onPress={handleRefresh}
+                  disabled={isRefreshing}
+                >
+                  <Ionicons
+                    name={isRefreshing ? "refresh" : "refresh-outline"}
+                    size={18}
+                    color={Colors.gold}
+                    style={isRefreshing && styles.spinningIcon}
+                  />
+                </Pressable>
+              )}
+              {currentEvent && !isParticipant && (
+                <Pressable
+                  style={({ pressed }) => [styles.codeChip, { opacity: pressed ? 0.8 : 1 }]}
+                  onPress={handleShare}
+                >
+                  <Ionicons name="share-outline" size={14} color={Colors.gold} />
+                  <Text style={styles.codeText}>{currentEvent.eventCode}</Text>
+                </Pressable>
+              )}
+              {isParticipant && (
+                <View style={[styles.codeChip, { backgroundColor: "rgba(212,160,23,0.08)" }]}>
+                  <Ionicons name="hand-left-outline" size={14} color={Colors.gold} />
+                  <Text style={styles.codeText}>Helper</Text>
+                </View>
+              )}
+            </View>
           </View>
 
           {currentEvent ? (
@@ -167,6 +223,9 @@ export default function DashboardScreen() {
               <StatCard label="Completed" value={completedTasks} icon="checkmark-circle-outline" color={Colors.success} />
               <StatCard label="In Progress" value={inProgressTasks} icon="time-outline" color={Colors.warning} />
               <StatCard label="Pending" value={pendingTasks} icon="ellipse-outline" color={Colors.textMuted} />
+              {!isParticipant && (
+                <StatCard label="Helpers" value={helpersCount} icon="people-outline" color={Colors.primary} />
+              )}
             </Animated.View>
 
             {!isParticipant && eventFunctions.length > 0 && (
@@ -334,6 +393,25 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "flex-start",
     paddingTop: 16,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  refreshBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(212,160,23,0.15)",
+    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderWidth: 1,
+    borderColor: "rgba(212,160,23,0.3)",
+  },
+  spinningIcon: {
+    transform: [{ rotate: "360deg" }],
   },
   greeting: { fontFamily: "Inter_400Regular", fontSize: 14, color: "rgba(255,255,255,0.55)" },
   userName: { fontFamily: "Inter_700Bold", fontSize: 24, color: "#FFFFFF" },

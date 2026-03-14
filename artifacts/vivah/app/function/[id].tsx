@@ -117,7 +117,7 @@ function TaskCard({ task, onPress }: { task: Task; onPress: () => void }) {
 export default function FunctionDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { functions, tasks, user, participants, createTask, addNotification, loadTasksForFunction, loadingTasks } = useApp();
+  const { functions, tasks, user, participants, createTask, addNotification, loadTasksForFunction, loadingTasks, refreshParticipants } = useApp();
   const [showAdd, setShowAdd] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("medium");
@@ -134,6 +134,13 @@ export default function FunctionDetailScreen() {
       loadTasksForFunction(id);
     }
   }, [id]);
+
+  // Refresh participants when opening the add task modal
+  useEffect(() => {
+    if (showAdd && !isParticipant) {
+      refreshParticipants();
+    }
+  }, [showAdd, isParticipant, refreshParticipants]);
 
   const fnTasks = useMemo(
     () => tasks.filter((t) => t.functionId === id),
@@ -184,6 +191,8 @@ export default function FunctionDetailScreen() {
         message: `"${newTitle.trim()}" added to ${fn.name}`,
         type: "task_assigned",
       });
+      // Refresh participants after creating task
+      await refreshParticipants();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowAdd(false);
       setNewTitle("");

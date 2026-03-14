@@ -40,7 +40,7 @@ const PRIORITY_COLORS: Record<TaskPriority, string> = {
 export default function TaskDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { tasks, functions, updateTask, addSubtask, toggleSubtask, addNotification, user, participants, getTask } = useApp();
+  const { tasks, functions, updateTask, addSubtask, toggleSubtask, addNotification, user, participants, getTask, refreshParticipants } = useApp();
   const [showAssign, setShowAssign] = useState(false);
   const [showAddSubtask, setShowAddSubtask] = useState(false);
   const [newSubtask, setNewSubtask] = useState("");
@@ -67,6 +67,13 @@ export default function TaskDetailScreen() {
         });
     }
   }, [id, task, loadingTask, fetchedTask, getTask]);
+
+  // Refresh participants when opening the assign modal
+  useEffect(() => {
+    if (showAssign && isManager) {
+      refreshParticipants();
+    }
+  }, [showAssign, isManager, refreshParticipants]);
 
   if (loadingTask) {
     return (
@@ -128,6 +135,8 @@ export default function TaskDetailScreen() {
           type: "task_assigned",
         });
       }
+      // Refresh participants after assigning task
+      await refreshParticipants();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } finally {
       setSaving(false);

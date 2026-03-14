@@ -14,6 +14,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Colors } from "@/constants/colors";
@@ -79,12 +80,18 @@ const fieldStyles = StyleSheet.create({
 export default function CreateEventScreen() {
   const insets = useSafeAreaInsets();
   const { user, createEvent } = useApp();
+  
+  // Set default date for web platform
+  const defaultDate = Platform.OS === 'web'
+    ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] // 30 days from now
+    : '';
+  
   const [form, setForm] = useState({
     name: "",
     brideName: "",
     groomName: "",
     weddingCity: "",
-    weddingDate: "",
+    weddingDate: defaultDate,
     description: "",
   });
 
@@ -93,6 +100,18 @@ export default function CreateEventScreen() {
   const set = (key: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [key]: v }));
 
   const [loading, setLoading] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  const handleDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    
+    if (selectedDate) {
+      const formattedDate = selectedDate.toISOString().split('T')[0];
+      set("weddingDate")(formattedDate);
+    }
+  };
 
   const handleCreate = async () => {
     if (!isValid || !user || loading) return;
@@ -189,14 +208,40 @@ export default function CreateEventScreen() {
               icon="location-outline"
               autoCapitalize="words"
             />
-            <Field
-              label="Wedding Date *"
-              value={form.weddingDate}
-              onChangeText={set("weddingDate")}
-              placeholder="DD/MM/YYYY"
-              icon="calendar-outline"
-              keyboardType="default"
-            />
+            <View style={fieldStyles.wrap}>
+              <Text style={fieldStyles.label}>Wedding Date *</Text>
+              {Platform.OS === 'web' ? (
+                <View style={[fieldStyles.inputRow, fieldStyles.inputFocused]}>
+                  <Ionicons name="calendar-outline" size={18} color={Colors.primary} style={fieldStyles.icon} />
+                  <Text style={fieldStyles.input}>
+                    {form.weddingDate ? new Date(form.weddingDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : "Default date set"}
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <Pressable
+                    style={[fieldStyles.inputRow, form.weddingDate && fieldStyles.inputFocused]}
+                    onPress={() => setShowDatePicker(true)}
+                  >
+                    <Ionicons name="calendar-outline" size={18} color={form.weddingDate ? Colors.primary : Colors.textMuted} style={fieldStyles.icon} />
+                    <Text style={[fieldStyles.input, !form.weddingDate && { color: Colors.textMuted }]}>
+                      {form.weddingDate ? new Date(form.weddingDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : "Select wedding date"}
+                    </Text>
+                  </Pressable>
+                  
+                  {showDatePicker && (
+                    <DateTimePicker
+                      value={form.weddingDate ? new Date(form.weddingDate) : new Date()}
+                      mode="date"
+                      display="default"
+                      onChange={handleDateChange}
+                      minimumDate={new Date()}
+                      style={{ width: 120 }}
+                    />
+                  )}
+                </>
+              )}
+            </View>
             <Field
               label="Description (optional)"
               value={form.description}
