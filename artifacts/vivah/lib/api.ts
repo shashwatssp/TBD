@@ -1,5 +1,7 @@
-// Use IP address directly for local development
-const BASE = `http://192.168.0.4:3000/api`;
+// Use environment variable for backend URL
+// For local development: EXPO_PUBLIC_DOMAIN=192.168.0.4:3000
+// For production: EXPO_PUBLIC_DOMAIN=your-production-backend-url.com
+const BASE = `http://${process.env.EXPO_PUBLIC_DOMAIN || "192.168.0.4:3000"}/api`;
 
 async function req<T>(path: string, opts?: RequestInit): Promise<T> {
   const url = `${BASE}${path}`;

@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Colors } from "@/constants/colors";
 import { Task, useApp } from "@/context/AppContext";
-import { api } from "@/lib/api";
+import { getTasks } from "@/lib/firebaseService";
 
 function ProgressBar({ progress }: { progress: number }) {
   return (
@@ -45,7 +45,7 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     if (isParticipant && user && currentEvent) {
-      api.getTasks({ assignedTo: user.id, eventId: currentEvent.id })
+      getTasks({ assignedTo: user.id, eventId: currentEvent.id })
         .then((t) => setMyTasks(t))
         .catch(console.error);
     }

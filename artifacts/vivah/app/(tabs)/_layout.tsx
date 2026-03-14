@@ -19,7 +19,7 @@ function NativeTabLayout({ unreadCount }: { unreadCount: number }) {
         <Label>Home</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="functions">
-        <Icon sf={{ default: "list.bullet", selected: "list.bullet.fill" }} />
+        <Icon sf={{ default: "list.bullet", selected: "list.bullet" }} />
         <Label>Functions</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="notifications">

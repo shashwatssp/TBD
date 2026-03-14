@@ -21,7 +21,7 @@ import { useApp } from "@/context/AppContext";
 
 export default function JoinEventScreen() {
   const insets = useSafeAreaInsets();
-  const { joinEvent } = useApp();
+  const { joinEvent, user } = useApp();
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -40,11 +40,11 @@ export default function JoinEventScreen() {
   };
 
   const handleJoin = async () => {
-    if (code.length < 6 || loading) return;
+    if (code.length < 6 || loading || !user) return;
     setError("");
     setLoading(true);
     try {
-      await joinEvent(code.toUpperCase().trim());
+      await joinEvent(user.id, code.toUpperCase().trim());
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.dismissAll();
       router.replace("/(tabs)");

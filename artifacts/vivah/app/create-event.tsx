@@ -96,11 +96,20 @@ export default function CreateEventScreen() {
 
   const handleCreate = async () => {
     if (!isValid || !user || loading) return;
+    
+    // Validate user has an ID
+    if (!user.id) {
+      console.error("User ID is missing. Please log in again.");
+      alert("Session expired. Please log in again.");
+      router.replace("/(auth)/login");
+      return;
+    }
+    
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setLoading(true);
     try {
       const eventName = form.name.trim() || `${form.brideName} & ${form.groomName} Wedding`;
-      await createEvent({
+      await createEvent(user.id, {
         name: eventName,
         brideName: form.brideName.trim(),
         groomName: form.groomName.trim(),
@@ -111,7 +120,8 @@ export default function CreateEventScreen() {
       router.dismissAll();
       router.replace("/(tabs)");
     } catch (e) {
-      console.error(e);
+      console.error("Error creating event:", e);
+      alert("Failed to create event. Please try again.");
     } finally {
       setLoading(false);
     }

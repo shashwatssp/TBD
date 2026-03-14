@@ -49,7 +49,7 @@ export default function FunctionsScreen() {
     setAddingFn(true);
     const name = customName.trim() || selectedIcon.name;
     try {
-      await createFunction({
+      await createFunction(currentEvent.id, {
         name,
         date: null,
         description: "",

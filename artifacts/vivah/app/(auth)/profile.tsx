@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Colors } from "@/constants/colors";
 import { useApp, UserRole } from "@/context/AppContext";
-import { api } from "@/lib/api";
+import { upsertUser, updateUser } from "@/lib/firebaseService";
 
 export default function ProfileSetupScreen() {
   const insets = useSafeAreaInsets();
@@ -38,11 +38,20 @@ export default function ProfileSetupScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
     try {
-      const user = await api.upsertUser({ phone: phone ?? "", name: name.trim() });
+      const user = await upsertUser(phone ?? "", name.trim());
+      
+      // Validate user object has all required fields
+      if (!user.id || !user.name || !user.phone || !user.role) {
+        console.error("Invalid user object from upsertUser:", user);
+        throw new Error("Invalid user object: missing required fields");
+      }
+      
+      console.log("User created with ID:", user.id);
       setCreatedUserId(user.id);
       setStep("role");
     } catch (e) {
-      console.error(e);
+      console.error("Error in handleNameContinue:", e);
+      alert("Failed to create user. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -53,7 +62,15 @@ export default function ProfileSetupScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
     try {
-      const updated = await api.updateUser(createdUserId, { role });
+      const updated = await updateUser(createdUserId, { role });
+      
+      // Validate user object has all required fields
+      if (!updated.id || !updated.name || !updated.phone || !updated.role) {
+        console.error("Invalid user object from updateUser:", updated);
+        throw new Error("Invalid user object: missing required fields");
+      }
+      
+      console.log("Setting user with ID:", updated.id);
       await setUser({ id: updated.id, name: updated.name, phone: updated.phone, role: updated.role });
       router.dismissAll();
       if (role === "manager") {
@@ -62,7 +79,8 @@ export default function ProfileSetupScreen() {
         router.replace("/join-event");
       }
     } catch (e) {
-      console.error(e);
+      console.error("Error in handleRoleSelect:", e);
+      alert("Failed to complete setup. Please try again.");
     } finally {
       setLoading(false);
     }

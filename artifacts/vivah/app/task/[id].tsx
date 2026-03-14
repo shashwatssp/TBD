@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -17,7 +17,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Colors } from "@/constants/colors";
-import { TaskPriority, TaskStatus, useApp } from "@/context/AppContext";
+import { Task, TaskPriority, TaskStatus, useApp } from "@/context/AppContext";
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   not_started: "Not Started",
@@ -40,16 +40,42 @@ const PRIORITY_COLORS: Record<TaskPriority, string> = {
 export default function TaskDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { tasks, functions, updateTask, addSubtask, toggleSubtask, addNotification, user, participants } = useApp();
+  const { tasks, functions, updateTask, addSubtask, toggleSubtask, addNotification, user, participants, getTask } = useApp();
   const [showAssign, setShowAssign] = useState(false);
   const [showAddSubtask, setShowAddSubtask] = useState(false);
   const [newSubtask, setNewSubtask] = useState("");
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loadingTask, setLoadingTask] = useState(false);
+  const [fetchedTask, setFetchedTask] = useState<Task | null>(null);
 
   const isManager = user?.role === "manager";
-  const task = tasks.find((t) => t.id === id);
+  const task = tasks.find((t) => t.id === id) || fetchedTask;
   const fn = task ? functions.find((f) => f.id === task.functionId) : null;
+
+  // Fetch task if not found in context
+  useEffect(() => {
+    if (!task && id && !loadingTask && !fetchedTask) {
+      setLoadingTask(true);
+      getTask(id)
+        .then(setFetchedTask)
+        .catch((error) => {
+          console.error("Error fetching task:", error);
+        })
+        .finally(() => {
+          setLoadingTask(false);
+        });
+    }
+  }, [id, task, loadingTask, fetchedTask, getTask]);
+
+  if (loadingTask) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingText}>Loading task...</Text>
+      </View>
+    );
+  }
 
   if (!task || !fn) {
     return (
@@ -123,7 +149,7 @@ export default function TaskDetailScreen() {
   };
 
   const handleToggleSubtask = async (subtaskId: string, completed: boolean) => {
-    await toggleSubtask(task.id, subtaskId, !completed);
+    await toggleSubtask(task.id, subtaskId);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
@@ -365,6 +391,7 @@ export default function TaskDetailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, backgroundColor: Colors.background },
+  loadingText: { fontFamily: "Inter_400Regular", fontSize: 14, color: Colors.textMuted, marginTop: 12 },
   notFound: { fontFamily: "Inter_600SemiBold", fontSize: 18, color: Colors.textSecondary },
   backLink: { fontFamily: "Inter_500Medium", fontSize: 14, color: Colors.primary },
   header: {
