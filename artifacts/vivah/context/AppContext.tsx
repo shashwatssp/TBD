@@ -25,18 +25,34 @@ import {
   getNotifications,
   createNotification as createNotificationFirebase,
   markNotificationRead as markNotificationReadFirebase,
+  createGuestFamily as createGuestFamilyFirebase,
+  getGuestFamilies,
+  updateGuestFamily as updateGuestFamilyFirebase,
+  deleteGuestFamily as deleteGuestFamilyFirebase,
+  getGuestFamilyWithGuests as getGuestFamilyWithGuestsFirebase,
+  createGuest as createGuestFirebase,
+  getGuests,
+  updateGuest as updateGuestFirebase,
+  deleteGuest as deleteGuestFirebase,
+  getGuestStats as getGuestStatsFirebase,
+  generateInvitationData,
+  WEDDING_TYPE_FUNCTIONS,
   FirebaseEvent,
   FirebaseFunction,
   FirebaseNotification,
   FirebaseSubtask,
   FirebaseTask,
   FirebaseUser,
+  GuestFamily,
+  Guest,
+  WeddingType,
+  RSVPStatus,
   UserRole
 } from "@/lib/firebaseService";
 
 export type TaskStatus = "not_started" | "in_progress" | "completed";
 export type TaskPriority = "high" | "medium" | "low";
-export type { UserRole };
+export type { UserRole, WeddingType, RSVPStatus };
 
 export interface User {
   id: string;
@@ -50,6 +66,8 @@ export type Task = FirebaseTask;
 export type WeddingFunction = FirebaseFunction;
 export type WeddingEvent = FirebaseEvent;
 export type Notification = FirebaseNotification;
+export type GuestFamilyType = GuestFamily;
+export type GuestType = Guest;
 
 interface AppContextType {
   user: User | null;
@@ -61,11 +79,17 @@ interface AppContextType {
   functions: WeddingFunction[];
   tasks: Task[];
   notifications: Notification[];
+  guestFamilies: GuestFamilyType[];
+  guests: GuestType[];
   loadingFunctions: boolean;
   loadingTasks: boolean;
+  loadingGuests: boolean;
+  logout: () => Promise<void>;
   createEvent: (managerId: string, event: {
     name: string; brideName: string; groomName: string;
-    weddingCity: string; weddingDate: string; description?: string;
+    weddingCity: string; weddingDate: string; weddingType?: WeddingType | null;
+    venue?: string | null; location?: string | null; budget?: number | null;
+    description?: string;
   }) => Promise<WeddingEvent>;
   joinEvent: (userId: string, code: string) => Promise<WeddingEvent>;
   createFunction: (eventId: string, fn: {
@@ -77,7 +101,7 @@ interface AppContextType {
   createTask: (task: {
     functionId: string; title: string; description?: string; dueDate?: string | null;
     assignedTo?: string | null; assignedToName?: string | null;
-    priority: TaskPriority; status: TaskStatus;
+    priority: TaskPriority; status: TaskStatus; budget?: number | null;
   }) => Promise<Task>;
   updateTask: (taskId: string, updates: Partial<Task>) => Promise<Task>;
   addSubtask: (taskId: string, title: string) => Promise<Subtask>;
@@ -87,6 +111,23 @@ interface AppContextType {
   refreshNotifications: () => Promise<void>;
   refreshParticipants: () => Promise<void>;
   unreadCount: number;
+  // Guest Management
+  createGuestFamily: (data: Omit<GuestFamilyType, 'id' | 'createdAt' | 'updatedAt'>) => Promise<GuestFamilyType>;
+  updateGuestFamily: (familyId: string, updates: Partial<GuestFamilyType>) => Promise<GuestFamilyType>;
+  deleteGuestFamily: (familyId: string) => Promise<void>;
+  getGuestFamilyWithGuests: (familyId: string) => Promise<GuestFamilyType & { guests: GuestType[] }>;
+  createGuest: (data: Omit<GuestType, 'id' | 'createdAt' | 'updatedAt'>) => Promise<GuestType>;
+  updateGuest: (guestId: string, updates: Partial<GuestType>) => Promise<GuestType>;
+  deleteGuest: (guestId: string) => Promise<void>;
+  refreshGuests: () => Promise<void>;
+  getGuestStats: (eventId?: string) => Promise<{total: number; accepted: number; declined: number; pending: number; accommodationRequired: number}>;
+  generateInvitation: (eventId: string, familyId?: string) => Promise<{
+    wedding: WeddingEvent;
+    family?: GuestFamilyType & { guests: GuestType[] };
+    guests: GuestType[];
+    qrCodeUrl: string;
+    rsvpLink: string;
+  }>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -98,8 +139,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [functions, setFunctions] = useState<WeddingFunction[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [guestFamilies, setGuestFamilies] = useState<GuestFamilyType[]>([]);
+  const [guests, setGuests] = useState<GuestType[]>([]);
   const [loadingFunctions, setLoadingFunctions] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(false);
+  const [loadingGuests, setLoadingGuests] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const eventIdRef = useRef<string | null>(null);
 
@@ -135,6 +179,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     eventIdRef.current = eid;
     loadFunctions(eid);
     loadParticipants(eid);
+    loadGuests(eid);
   }, [currentEvent?.id, user]);
 
   useEffect(() => {
@@ -168,6 +213,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const n = await getNotifications(userId);
       setNotifications(n);
     } catch {}
+  };
+
+  const loadGuests = async (eventId: string) => {
+    setLoadingGuests(true);
+    try {
+      const [families, guestList] = await Promise.all([
+        getGuestFamilies(eventId),
+        getGuests(eventId)
+      ]);
+      setGuestFamilies(families);
+      setGuests(guestList);
+    } catch (e) {
+      console.error("loadGuests error", e);
+    } finally {
+      setLoadingGuests(false);
+    }
   };
 
   const setUser = useCallback(async (u: User | null) => {
@@ -205,7 +266,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const createEvent = useCallback(async (managerId: string, data: {
     name: string; brideName: string; groomName: string;
-    weddingCity: string; weddingDate: string; description?: string;
+    weddingCity: string; weddingDate: string; weddingType?: WeddingType | null;
+    venue?: string | null; location?: string | null; budget?: number | null;
+    description?: string;
   }): Promise<WeddingEvent> => {
     if (!user) throw new Error("Not logged in");
     if (!managerId) {
@@ -262,7 +325,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const createTask = useCallback(async (task: {
     functionId: string; title: string; description?: string; dueDate?: string | null;
     assignedTo?: string | null; assignedToName?: string | null;
-    priority: TaskPriority; status: TaskStatus;
+    priority: TaskPriority; status: TaskStatus; budget?: number | null;
   }): Promise<Task> => {
     const created = await createTaskFirebase({ description: "", ...task });
     setTasks((prev) => [...prev, created]);
@@ -323,6 +386,100 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await loadParticipants(currentEvent.id);
   }, [currentEvent]);
 
+  // Guest Management Functions
+  const createGuestFamily = useCallback(async (data: Omit<GuestFamilyType, 'id' | 'createdAt' | 'updatedAt'>): Promise<GuestFamilyType> => {
+    const created = await createGuestFamilyFirebase(data);
+    setGuestFamilies((prev) => [...prev, created]);
+    return created;
+  }, []);
+
+  const updateGuestFamily = useCallback(async (familyId: string, updates: Partial<GuestFamilyType>): Promise<GuestFamilyType> => {
+    const updated = await updateGuestFamilyFirebase(familyId, updates);
+    setGuestFamilies((prev) => prev.map((f) => f.id === familyId ? updated : f));
+    return updated;
+  }, []);
+
+  const deleteGuestFamily = useCallback(async (familyId: string): Promise<void> => {
+    await deleteGuestFamilyFirebase(familyId);
+    setGuestFamilies((prev) => prev.filter((f) => f.id !== familyId));
+    setGuests((prev) => prev.filter((g) => g.familyId !== familyId));
+  }, []);
+
+  const getGuestFamilyWithGuests = useCallback(async (familyId: string): Promise<GuestFamilyType & { guests: GuestType[] }> => {
+    return await getGuestFamilyWithGuestsFirebase(familyId);
+  }, []);
+
+  const createGuest = useCallback(async (data: Omit<GuestType, 'id' | 'createdAt' | 'updatedAt'>): Promise<GuestType> => {
+    const created = await createGuestFirebase(data);
+    setGuests((prev) => [...prev, created]);
+    return created;
+  }, []);
+
+  const updateGuest = useCallback(async (guestId: string, updates: Partial<GuestType>): Promise<GuestType> => {
+    const updated = await updateGuestFirebase(guestId, updates);
+    setGuests((prev) => prev.map((g) => g.id === guestId ? updated : g));
+    return updated;
+  }, []);
+
+  const deleteGuest = useCallback(async (guestId: string): Promise<void> => {
+    await deleteGuestFirebase(guestId);
+    setGuests((prev) => prev.filter((g) => g.id !== guestId));
+  }, []);
+
+  const refreshGuests = useCallback(async () => {
+    if (!currentEvent) return;
+    await loadGuests(currentEvent.id);
+  }, [currentEvent]);
+
+  const getGuestStats = useCallback(async (eventId?: string): Promise<{total: number; accepted: number; declined: number; pending: number; accommodationRequired: number}> => {
+    const id = eventId || currentEvent?.id;
+    if (!id) {
+      return { total: 0, accepted: 0, declined: 0, pending: 0, accommodationRequired: 0 };
+    }
+    return await getGuestStatsFirebase(id);
+  }, [currentEvent]);
+
+  const generateInvitation = useCallback(async (eventId: string, familyId?: string): Promise<{
+    wedding: WeddingEvent;
+    family?: GuestFamilyType & { guests: GuestType[] };
+    guests: GuestType[];
+    qrCodeUrl: string;
+    rsvpLink: string;
+  }> => {
+    return await generateInvitationData(eventId, familyId);
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      console.log("Starting logout process");
+      
+      // Clear all AsyncStorage data
+      await AsyncStorage.multiRemove([
+        "@vivah_user",
+        "@vivah_current_event"
+      ]);
+      
+      // Clear all state
+      setUserState(null);
+      setCurrentEventState(null);
+      setParticipants([]);
+      setFunctions([]);
+      setTasks([]);
+      setNotifications([]);
+      setGuestFamilies([]);
+      setGuests([]);
+      setLoadingFunctions(false);
+      setLoadingTasks(false);
+      setLoadingGuests(false);
+      eventIdRef.current = null;
+      
+      console.log("Logout completed successfully");
+    } catch (error) {
+      console.error("Logout error:", error);
+      throw error;
+    }
+  }, []);
+
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   if (!loaded) return null;
@@ -339,8 +496,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         functions,
         tasks,
         notifications,
+        guestFamilies,
+        guests,
         loadingFunctions,
         loadingTasks,
+        loadingGuests,
         createEvent,
         joinEvent,
         createFunction,
@@ -356,6 +516,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         refreshNotifications,
         refreshParticipants,
         unreadCount,
+        createGuestFamily,
+        updateGuestFamily,
+        deleteGuestFamily,
+        getGuestFamilyWithGuests,
+        createGuest,
+        updateGuest,
+        deleteGuest,
+        refreshGuests,
+        getGuestStats,
+        generateInvitation,
+        logout,
       }}
     >
       {children}

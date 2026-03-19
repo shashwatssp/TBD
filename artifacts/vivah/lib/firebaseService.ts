@@ -1,20 +1,26 @@
-import { 
-  collection, 
-  doc, 
-  getDoc, 
-  getDocs, 
-  addDoc, 
-  updateDoc, 
-  query, 
-  where, 
-  orderBy, 
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
   serverTimestamp,
-  Timestamp 
+  Timestamp
 } from 'firebase/firestore';
 import { db } from './firebase';
 
 // Types
 export type UserRole = "manager" | "participant";
+
+export type WeddingType = "north_indian" | "south_indian" | "bengali" | "gujarati" |
+                        "punjabi" | "marathi" | "tamil" | "telugu" | "kerala" | "rajasthani";
+
+export type RSVPStatus = "pending" | "accepted" | "declined";
 
 export interface FirebaseUser {
   id: string;
@@ -31,6 +37,10 @@ export interface FirebaseEvent {
   groomName: string;
   weddingCity: string;
   weddingDate: string;
+  weddingType: WeddingType | null;
+  venue: string | null;
+  location: string | null;
+  budget: number | null;
   description: string;
   eventCode: string;
   managerId: string;
@@ -45,6 +55,7 @@ export interface FirebaseFunction {
   description: string;
   icon: string;
   color: string;
+  budget: number | null;
   createdAt: Timestamp;
 }
 
@@ -66,6 +77,7 @@ export interface FirebaseTask {
   assignedToName: string | null;
   priority: "high" | "medium" | "low";
   status: "not_started" | "in_progress" | "completed";
+  budget: number | null;
   createdAt: Timestamp;
   subtasks: FirebaseSubtask[];
 }
@@ -79,6 +91,103 @@ export interface FirebaseNotification {
   read: boolean;
   createdAt: string;
 }
+
+export interface GuestFamily {
+  id: string;
+  eventId: string;
+  name: string;
+  hotelRoom: string | null;
+  accommodationRequired: boolean;
+  rsvpStatus: RSVPStatus;
+  notes: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Guest {
+  id: string;
+  eventId: string;
+  familyId: string | null;
+  name: string;
+  phone: string | null;
+  relationship: string | null;
+  rsvpStatus: RSVPStatus;
+  accommodationRequired: boolean;
+  dietaryRestrictions: string | null;
+  notes: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+// Wedding Type Configurations with Default Functions
+export const WEDDING_TYPE_FUNCTIONS: Record<WeddingType, Array<{name: string, icon: string, color: string}>> = {
+  north_indian: [
+    { name: "Haldi", icon: "sunny-outline", color: "#F0C040" },
+    { name: "Mehendi", icon: "leaf-outline", color: "#2E8B57" },
+    { name: "Sangeet", icon: "musical-notes-outline", color: "#9B59B6" },
+    { name: "Wedding Ceremony", icon: "heart-outline", color: "#C0392B" },
+    { name: "Reception", icon: "star-outline", color: "#D4A017" },
+    { name: "Engagement", icon: "diamond-outline", color: "#1F5E8A" },
+  ],
+  south_indian: [
+    { name: "Nischayam", icon: "calendar-outline", color: "#E67E22" },
+    { name: "Mehendi", icon: "leaf-outline", color: "#2E8B57" },
+    { name: "Muhurtham", icon: "heart-outline", color: "#C0392B" },
+    { name: "Reception", icon: "star-outline", color: "#D4A017" },
+  ],
+  bengali: [
+    { name: "Aashirbad", icon: "hand-left-outline", color: "#E67E22" },
+    { name: "Mehendi", icon: "leaf-outline", color: "#2E8B57" },
+    { name: "Gaye Holud", icon: "flower-outline", color: "#F39C12" },
+    { name: "Wedding", icon: "heart-outline", color: "#C0392B" },
+    { name: "Reception", icon: "star-outline", color: "#D4A017" },
+  ],
+  gujarati: [
+    { name: "Gol Dhana", icon: "calendar-outline", color: "#E67E22" },
+    { name: "Mehendi", icon: "leaf-outline", color: "#2E8B57" },
+    { name: "Mandap Muhurat", icon: "home-outline", color: "#9B59B6" },
+    { name: "Wedding", icon: "heart-outline", color: "#C0392B" },
+    { name: "Reception", icon: "star-outline", color: "#D4A017" },
+  ],
+  punjabi: [
+    { name: "Roka", icon: "calendar-outline", color: "#E67E22" },
+    { name: "Mehendi", icon: "leaf-outline", color: "#2E8B57" },
+    { name: "Sangeet", icon: "musical-notes-outline", color: "#9B59B6" },
+    { name: "Wedding", icon: "heart-outline", color: "#C0392B" },
+    { name: "Reception", icon: "star-outline", color: "#D4A017" },
+  ],
+  marathi: [
+    { name: "Sakhar Puda", icon: "calendar-outline", color: "#E67E22" },
+    { name: "Mehendi", icon: "leaf-outline", color: "#2E8B57" },
+    { name: "Wedding", icon: "heart-outline", color: "#C0392B" },
+    { name: "Reception", icon: "star-outline", color: "#D4A017" },
+  ],
+  tamil: [
+    { name: "Nischayam", icon: "calendar-outline", color: "#E67E22" },
+    { name: "Mehendi", icon: "leaf-outline", color: "#2E8B57" },
+    { name: "Muhurtham", icon: "heart-outline", color: "#C0392B" },
+    { name: "Reception", icon: "star-outline", color: "#D4A017" },
+  ],
+  telugu: [
+    { name: "Nischayam", icon: "calendar-outline", color: "#E67E22" },
+    { name: "Mehendi", icon: "leaf-outline", color: "#2E8B57" },
+    { name: "Muhurtham", icon: "heart-outline", color: "#C0392B" },
+    { name: "Reception", icon: "star-outline", color: "#D4A017" },
+  ],
+  kerala: [
+    { name: "Nischayam", icon: "calendar-outline", color: "#E67E22" },
+    { name: "Mehendi", icon: "leaf-outline", color: "#2E8B57" },
+    { name: "Wedding", icon: "heart-outline", color: "#C0392B" },
+    { name: "Reception", icon: "star-outline", color: "#D4A017" },
+  ],
+  rajasthani: [
+    { name: "Tilak", icon: "calendar-outline", color: "#E67E22" },
+    { name: "Mehendi", icon: "leaf-outline", color: "#2E8B57" },
+    { name: "Sangeet", icon: "musical-notes-outline", color: "#9B59B6" },
+    { name: "Wedding", icon: "heart-outline", color: "#C0392B" },
+    { name: "Reception", icon: "star-outline", color: "#D4A017" },
+  ],
+};
 
 // Helper function to convert Firestore timestamp to string
 const timestampToString = (timestamp: Timestamp | undefined): string => {
@@ -158,6 +267,10 @@ export const createEvent = async (eventData: {
   groomName: string;
   weddingCity: string;
   weddingDate: string;
+  weddingType?: WeddingType | null;
+  venue?: string | null;
+  location?: string | null;
+  budget?: number | null;
   description?: string;
   managerId: string;
 }): Promise<FirebaseEvent> => {
@@ -170,12 +283,39 @@ export const createEvent = async (eventData: {
     ...eventData,
     eventCode,
     description: eventData.description || '',
+    weddingType: eventData.weddingType || null,
+    venue: eventData.venue || null,
+    location: eventData.location || null,
+    budget: eventData.budget || null,
     createdAt: serverTimestamp()
   };
   
   const docRef = await addDoc(eventsRef, newEvent);
+  const eventId = docRef.id;
+  
+  // Create default functions based on wedding type (only if weddingType is provided)
+  if (eventData.weddingType) {
+    const defaultFunctions = WEDDING_TYPE_FUNCTIONS[eventData.weddingType] || [];
+    const functionsRef = collection(db, 'functions');
+    
+    await Promise.all(
+      defaultFunctions.map((func) =>
+        addDoc(functionsRef, {
+          eventId,
+          name: func.name,
+          icon: func.icon,
+          color: func.color,
+          date: null,
+          description: '',
+          budget: null,
+          createdAt: serverTimestamp()
+        })
+      )
+    );
+  }
+  
   return {
-    id: docRef.id,
+    id: eventId,
     ...newEvent,
     createdAt: Timestamp.now()
   } as FirebaseEvent;
@@ -385,6 +525,7 @@ export const createTask = async (taskData: {
   assignedToName?: string | null;
   priority: "high" | "medium" | "low";
   status: "not_started" | "in_progress" | "completed";
+  budget?: number | null;
 }): Promise<FirebaseTask> => {
   const tasksRef = collection(db, 'tasks');
   
@@ -394,6 +535,7 @@ export const createTask = async (taskData: {
     dueDate: taskData.dueDate || null,
     assignedTo: taskData.assignedTo || null,
     assignedToName: taskData.assignedToName || null,
+    budget: taskData.budget || null,
     createdAt: serverTimestamp()
   };
   
@@ -404,6 +546,226 @@ export const createTask = async (taskData: {
     createdAt: Timestamp.now(),
     subtasks: []
   } as FirebaseTask;
+};
+
+// Guest Family Operations
+export const createGuestFamily = async (familyData: {
+  eventId: string;
+  name: string;
+  hotelRoom?: string | null;
+  accommodationRequired?: boolean;
+  notes?: string;
+}): Promise<GuestFamily> => {
+  const familiesRef = collection(db, 'guestFamilies');
+  
+  const newFamily = {
+    ...familyData,
+    hotelRoom: familyData.hotelRoom || null,
+    accommodationRequired: familyData.accommodationRequired ?? false,
+    notes: familyData.notes || '',
+    rsvpStatus: 'pending' as RSVPStatus,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  };
+  
+  const docRef = await addDoc(familiesRef, newFamily);
+  return {
+    id: docRef.id,
+    ...newFamily,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now()
+  } as GuestFamily;
+};
+
+export const getGuestFamilies = async (eventId: string): Promise<GuestFamily[]> => {
+  const familiesRef = collection(db, 'guestFamilies');
+  const q = query(familiesRef, where('eventId', '==', eventId));
+  const querySnapshot = await getDocs(q);
+  
+  return querySnapshot.docs.map(doc => ({
+    ...doc.data(),
+    id: doc.id
+  } as GuestFamily));
+};
+
+export const updateGuestFamily = async (familyId: string, updates: Partial<GuestFamily>): Promise<GuestFamily> => {
+  const familyRef = doc(db, 'guestFamilies', familyId);
+  await updateDoc(familyRef, { ...updates, updatedAt: serverTimestamp() });
+  
+  const familyDoc = await getDoc(familyRef);
+  if (!familyDoc.exists()) {
+    throw new Error('Guest family not found');
+  }
+  
+  return {
+    ...familyDoc.data(),
+    id: familyDoc.id
+  } as GuestFamily;
+};
+
+export const deleteGuestFamily = async (familyId: string): Promise<void> => {
+  const familyRef = doc(db, 'guestFamilies', familyId);
+  await deleteDoc(familyRef);
+  
+  // Also delete all guests in this family
+  const guestsRef = collection(db, 'guests');
+  const q = query(guestsRef, where('familyId', '==', familyId));
+  const querySnapshot = await getDocs(q);
+  
+  const deletePromises = querySnapshot.docs.map(doc => deleteDoc(doc.ref));
+  await Promise.all(deletePromises);
+};
+
+export const getGuestFamilyWithGuests = async (familyId: string): Promise<GuestFamily & { guests: Guest[] }> => {
+  const familyRef = doc(db, 'guestFamilies', familyId);
+  const familyDoc = await getDoc(familyRef);
+  
+  if (!familyDoc.exists()) {
+    throw new Error('Guest family not found');
+  }
+  
+  const familyData = familyDoc.data() as GuestFamily;
+  
+  // Get guests for this family
+  const guestsRef = collection(db, 'guests');
+  const q = query(guestsRef, where('familyId', '==', familyId));
+  const guestsSnapshot = await getDocs(q);
+  
+  const guests = guestsSnapshot.docs.map(doc => ({
+    ...doc.data(),
+    id: doc.id
+  } as Guest));
+  
+  return {
+    ...familyData,
+    id: familyDoc.id,
+    guests
+  };
+};
+
+// Guest Operations
+export const createGuest = async (guestData: {
+  eventId: string;
+  familyId?: string | null;
+  name: string;
+  phone?: string | null;
+  relationship?: string | null;
+  rsvpStatus?: RSVPStatus;
+  accommodationRequired?: boolean;
+  dietaryRestrictions?: string | null;
+  notes?: string;
+}): Promise<Guest> => {
+  const guestsRef = collection(db, 'guests');
+  
+  const newGuest = {
+    ...guestData,
+    familyId: guestData.familyId || null,
+    phone: guestData.phone || null,
+    relationship: guestData.relationship || null,
+    rsvpStatus: guestData.rsvpStatus || 'pending',
+    accommodationRequired: guestData.accommodationRequired ?? false,
+    dietaryRestrictions: guestData.dietaryRestrictions || null,
+    notes: guestData.notes || '',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  };
+  
+  const docRef = await addDoc(guestsRef, newGuest);
+  return {
+    id: docRef.id,
+    ...newGuest,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now()
+  } as Guest;
+};
+
+export const getGuests = async (eventId: string, familyId?: string): Promise<Guest[]> => {
+  const guestsRef = collection(db, 'guests');
+  let q = query(guestsRef, where('eventId', '==', eventId));
+  
+  if (familyId) {
+    q = query(guestsRef, where('eventId', '==', eventId), where('familyId', '==', familyId));
+  }
+  
+  const querySnapshot = await getDocs(q);
+  
+  return querySnapshot.docs.map(doc => ({
+    ...doc.data(),
+    id: doc.id
+  } as Guest));
+};
+
+export const updateGuest = async (guestId: string, updates: Partial<Guest>): Promise<Guest> => {
+  const guestRef = doc(db, 'guests', guestId);
+  await updateDoc(guestRef, { ...updates, updatedAt: serverTimestamp() });
+  
+  const guestDoc = await getDoc(guestRef);
+  if (!guestDoc.exists()) {
+    throw new Error('Guest not found');
+  }
+  
+  return {
+    ...guestDoc.data(),
+    id: guestDoc.id
+  } as Guest;
+};
+
+export const deleteGuest = async (guestId: string): Promise<void> => {
+  const guestRef = doc(db, 'guests', guestId);
+  await deleteDoc(guestRef);
+};
+
+export const getGuestStats = async (eventId: string): Promise<{
+  total: number;
+  accepted: number;
+  declined: number;
+  pending: number;
+  accommodationRequired: number;
+}> => {
+  const guests = await getGuests(eventId);
+  
+  return {
+    total: guests.length,
+    accepted: guests.filter(g => g.rsvpStatus === 'accepted').length,
+    declined: guests.filter(g => g.rsvpStatus === 'declined').length,
+    pending: guests.filter(g => g.rsvpStatus === 'pending').length,
+    accommodationRequired: guests.filter(g => g.accommodationRequired).length
+  };
+};
+
+// Invitation Generation
+export const generateInvitationData = async (eventId: string, familyId?: string): Promise<{
+  wedding: FirebaseEvent;
+  family?: GuestFamily & { guests: Guest[] };
+  guests: Guest[];
+  qrCodeUrl: string;
+  rsvpLink: string;
+}> => {
+  const wedding = await getEvent(eventId);
+  let family: (GuestFamily & { guests: Guest[] }) | undefined;
+  let guests: Guest[] = [];
+  
+  if (familyId) {
+    family = await getGuestFamilyWithGuests(familyId);
+    guests = family.guests;
+  } else {
+    guests = await getGuests(eventId);
+  }
+  
+  // Generate QR code URL (using Google Maps API for location)
+  const locationQuery = encodeURIComponent(wedding.location || wedding.weddingCity);
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${locationQuery}`;
+  
+  // Generate RSVP link (deep link to app)
+  const rsvpLink = `vivah://rsvp/${eventId}${familyId ? `?family=${familyId}` : ''}`;
+  
+  return {
+    wedding,
+    family,
+    guests,
+    qrCodeUrl,
+    rsvpLink
+  };
 };
 
 export const updateTask = async (taskId: string, updates: Partial<FirebaseTask>): Promise<FirebaseTask> => {

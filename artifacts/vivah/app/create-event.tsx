@@ -18,7 +18,7 @@ import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/dat
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Colors } from "@/constants/colors";
-import { useApp } from "@/context/AppContext";
+import { useApp, WeddingType } from "@/context/AppContext";
 
 interface FieldProps {
   label: string;
@@ -92,10 +92,14 @@ export default function CreateEventScreen() {
     groomName: "",
     weddingCity: "",
     weddingDate: defaultDate,
+    weddingType: "north_indian" as WeddingType,
+    venue: "",
+    location: "",
+    budget: "",
     description: "",
   });
 
-  const isValid = form.brideName.trim() && form.groomName.trim() && form.weddingCity.trim() && form.weddingDate.trim();
+  const isValid = form.brideName.trim() && form.groomName.trim() && form.weddingCity.trim() && form.weddingDate.trim() && form.weddingType;
 
   const set = (key: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [key]: v }));
 
@@ -134,6 +138,10 @@ export default function CreateEventScreen() {
         groomName: form.groomName.trim(),
         weddingCity: form.weddingCity.trim(),
         weddingDate: form.weddingDate.trim(),
+        weddingType: form.weddingType,
+        venue: form.venue.trim() || null,
+        location: form.location.trim() || null,
+        budget: form.budget ? parseFloat(form.budget) : null,
         description: form.description.trim(),
       });
       router.dismissAll();
@@ -242,6 +250,69 @@ export default function CreateEventScreen() {
                 </>
               )}
             </View>
+            
+            <View style={fieldStyles.wrap}>
+              <Text style={fieldStyles.label}>Wedding Type *</Text>
+              <View style={styles.weddingTypeContainer}>
+                {[
+                  { value: "north_indian" as WeddingType, label: "North Indian", icon: "🎭" },
+                  { value: "south_indian" as WeddingType, label: "South Indian", icon: "🪷" },
+                  { value: "bengali" as WeddingType, label: "Bengali", icon: "🪔" },
+                  { value: "gujarati" as WeddingType, label: "Gujarati", icon: "🎨" },
+                  { value: "punjabi" as WeddingType, label: "Punjabi", icon: "💃" },
+                  { value: "marathi" as WeddingType, label: "Marathi", icon: "🌸" },
+                  { value: "tamil" as WeddingType, label: "Tamil", icon: "🎪" },
+                  { value: "telugu" as WeddingType, label: "Telugu", icon: "🎭" },
+                  { value: "kerala" as WeddingType, label: "Kerala", icon: "🌴" },
+                  { value: "rajasthani" as WeddingType, label: "Rajasthani", icon: "🏰" },
+                ].map((type) => (
+                  <Pressable
+                    key={type.value}
+                    style={[
+                      styles.weddingTypeOption,
+                      form.weddingType === type.value && styles.weddingTypeSelected,
+                    ]}
+                    onPress={() => set("weddingType")(type.value)}
+                  >
+                    <Text style={styles.weddingTypeIcon}>{type.icon}</Text>
+                    <Text style={[
+                      styles.weddingTypeLabel,
+                      form.weddingType === type.value && styles.weddingTypeLabelSelected,
+                    ]}>
+                      {type.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            <Field
+              label="Venue (optional)"
+              value={form.venue}
+              onChangeText={set("venue")}
+              placeholder="e.g. Taj Palace, Grand Hyatt"
+              icon="business-outline"
+              autoCapitalize="words"
+            />
+
+            <Field
+              label="Location (optional)"
+              value={form.location}
+              onChangeText={set("location")}
+              placeholder="e.g. Connaught Place, New Delhi"
+              icon="map-outline"
+              autoCapitalize="words"
+            />
+
+            <Field
+              label="Budget (optional)"
+              value={form.budget}
+              onChangeText={set("budget")}
+              placeholder="e.g. 500000"
+              icon="cash-outline"
+              keyboardType="number-pad"
+            />
+
             <Field
               label="Description (optional)"
               value={form.description}
@@ -255,7 +326,7 @@ export default function CreateEventScreen() {
           <View style={styles.note}>
             <Ionicons name="information-circle-outline" size={16} color={Colors.textMuted} />
             <Text style={styles.noteText}>
-              Standard functions like Haldi, Mehendi, and Sangeet will be added automatically.
+              Functions will be added automatically based on your wedding type.
             </Text>
           </View>
 
@@ -326,4 +397,36 @@ const styles = StyleSheet.create({
   },
   createBtnDisabled: { opacity: 0.45 },
   createBtnText: { fontFamily: "Inter_700Bold", fontSize: 17, color: "#FFFFFF" },
+  weddingTypeContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  weddingTypeOption: {
+    flex: 1,
+    minWidth: "45%",
+    backgroundColor: Colors.background,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    padding: 12,
+    alignItems: "center",
+    gap: 6,
+  },
+  weddingTypeSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: "rgba(220, 38, 38, 0.08)",
+  },
+  weddingTypeIcon: {
+    fontSize: 20,
+  },
+  weddingTypeLabel: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  weddingTypeLabelSelected: {
+    color: Colors.primary,
+    fontFamily: "Inter_600SemiBold",
+  },
 });

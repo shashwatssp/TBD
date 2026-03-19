@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Platform,
   Pressable,
@@ -20,8 +21,9 @@ import { useApp } from "@/context/AppContext";
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, setUser, currentEvent, setCurrentEvent, participants, refreshParticipants } = useApp();
+  const { user, logout, currentEvent, participants, refreshParticipants } = useApp();
   const isManager = user?.role === "manager";
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
     if (currentEvent) {
@@ -51,28 +53,21 @@ export default function ProfileScreen() {
           style: "destructive",
           onPress: async () => {
             try {
+              setIsLoggingOut(true);
               console.log("Starting logout process for user:", user?.id, "role:", user?.role);
               
-              // Clear user and event state
-              await setUser(null);
-              console.log("User state cleared");
-              
-              await setCurrentEvent(null);
-              console.log("Event state cleared");
+              // Call the centralized logout function
+              await logout();
               
               // Navigate to welcome screen
               console.log("Navigating to welcome screen");
-              router.replace("/index");
-              
-              // Force navigation after a short delay to ensure it happens
-              setTimeout(() => {
-                console.log("Forcing navigation to welcome screen");
-                router.replace("/index");
-              }, 100);
+              router.replace("/");
             } catch (error) {
               console.error("Logout error:", error);
               // Even if there's an error, try to navigate to welcome screen
-              router.replace("/index");
+              router.replace("/");
+            } finally {
+              setIsLoggingOut(false);
             }
           },
         },
@@ -200,11 +195,21 @@ export default function ProfileScreen() {
 
         <Animated.View entering={FadeInDown.delay(200).duration(500)} style={styles.section}>
           <Pressable
-            style={({ pressed }) => [styles.logoutBtn, { opacity: pressed ? 0.85 : 1 }]}
+            style={({ pressed }) => [
+              styles.logoutBtn,
+              { opacity: pressed || isLoggingOut ? 0.85 : 1 }
+            ]}
             onPress={handleLogout}
+            disabled={isLoggingOut}
           >
-            <Ionicons name="log-out-outline" size={20} color={Colors.error} />
-            <Text style={styles.logoutText}>Logout</Text>
+            {isLoggingOut ? (
+              <ActivityIndicator color={Colors.error} size="small" />
+            ) : (
+              <Ionicons name="log-out-outline" size={20} color={Colors.error} />
+            )}
+            <Text style={styles.logoutText}>
+              {isLoggingOut ? "Logging out..." : "Logout"}
+            </Text>
           </Pressable>
         </Animated.View>
       </ScrollView>

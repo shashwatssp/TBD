@@ -124,6 +124,7 @@ export default function FunctionDetailScreen() {
   const [filterStatus, setFilterStatus] = useState<TaskStatus | "all">("all");
   const [selectedParticipant, setSelectedParticipant] = useState<{ id: string; name: string } | null>(null);
   const [addingTask, setAddingTask] = useState(false);
+  const [budget, setBudget] = useState("");
 
   const isParticipant = user?.role === "participant";
 
@@ -176,6 +177,7 @@ export default function FunctionDetailScreen() {
         assignedToName: assignee.name,
         priority,
         status: "not_started",
+        budget: budget.trim() ? parseFloat(budget.trim()) : null,
       });
       if (selectedParticipant) {
         await addNotification({
@@ -198,6 +200,7 @@ export default function FunctionDetailScreen() {
       setNewTitle("");
       setPriority("medium");
       setSelectedParticipant(null);
+      setBudget("");
     } catch (e) {
       console.error(e);
     } finally {
@@ -371,6 +374,20 @@ export default function FunctionDetailScreen() {
               </>
             )}
 
+            <Text style={styles.sheetLabel}>Budget (Optional)</Text>
+            <View style={styles.budgetRow}>
+              <Text style={styles.currencySymbol}>₹</Text>
+              <TextInput
+                style={styles.budgetInput}
+                placeholder="0"
+                value={budget}
+                onChangeText={setBudget}
+                placeholderTextColor={Colors.textMuted}
+                keyboardType="numeric"
+                underlineColorAndroid="transparent"
+              />
+            </View>
+
             <Text style={styles.sheetLabel}>Priority</Text>
             <View style={styles.priorityRow}>
               {(["high", "medium", "low"] as const).map((p) => (
@@ -524,6 +541,24 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   participantChipText: { fontFamily: "Inter_500Medium", fontSize: 12, color: Colors.textMuted },
+  budgetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.background,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  currencySymbol: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: Colors.text, marginRight: 8 },
+  budgetInput: {
+    flex: 1,
+    fontFamily: "Inter_400Regular",
+    fontSize: 15,
+    color: Colors.text,
+    outlineWidth: 0,
+  } as any,
   priorityRow: { flexDirection: "row", gap: 10 },
   priorityChip: {
     flex: 1,

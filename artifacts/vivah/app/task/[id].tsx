@@ -45,9 +45,11 @@ export default function TaskDetailScreen() {
   const [showAddSubtask, setShowAddSubtask] = useState(false);
   const [newSubtask, setNewSubtask] = useState("");
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [showEditBudget, setShowEditBudget] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingTask, setLoadingTask] = useState(false);
   const [fetchedTask, setFetchedTask] = useState<Task | null>(null);
+  const [editBudget, setEditBudget] = useState("");
 
   const isManager = user?.role === "manager";
   const task = tasks.find((t) => t.id === id) || fetchedTask;
@@ -67,6 +69,13 @@ export default function TaskDetailScreen() {
         });
     }
   }, [id, task, loadingTask, fetchedTask, getTask]);
+
+  // Initialize edit budget when task changes
+  useEffect(() => {
+    if (task) {
+      setEditBudget(task.budget ? task.budget.toString() : "");
+    }
+  }, [task]);
 
   // Refresh participants when opening the assign modal
   useEffect(() => {
@@ -162,6 +171,18 @@ export default function TaskDetailScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
+  const handleUpdateBudget = async () => {
+    setSaving(true);
+    try {
+      const budgetValue = editBudget.trim() ? parseFloat(editBudget.trim()) : null;
+      await updateTask(task.id, { budget: budgetValue });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowEditBudget(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const participantsList = participants.filter((p) => p.role === "participant");
 
   return (
@@ -238,6 +259,18 @@ export default function TaskDetailScreen() {
               </Text>
             </View>
           )}
+          <View style={styles.detailRow}>
+            <Ionicons name="cash-outline" size={16} color={Colors.textMuted} />
+            <Text style={styles.detailLabel}>Budget</Text>
+            <Text style={styles.detailValue}>
+              {task.budget ? `₹${task.budget.toLocaleString("en-IN")}` : "Not set"}
+            </Text>
+            {isManager && (
+              <Pressable onPress={() => setShowEditBudget(true)}>
+                <Ionicons name="pencil-outline" size={16} color={Colors.primary} />
+              </Pressable>
+            )}
+          </View>
         </View>
 
         <View style={styles.card}>
@@ -389,6 +422,35 @@ export default function TaskDetailScreen() {
               disabled={!newSubtask.trim() || saving}
             >
               {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Add</Text>}
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={showEditBudget} transparent animationType="slide">
+        <Pressable style={styles.overlay} onPress={() => setShowEditBudget(false)}>
+          <Pressable style={[styles.statusSheet, { paddingBottom: insets.bottom + 20 }]}>
+            <View style={styles.grabber} />
+            <Text style={styles.sheetTitle}>Edit Budget</Text>
+            <View style={styles.budgetRow}>
+              <Text style={styles.currencySymbol}>₹</Text>
+              <TextInput
+                style={styles.budgetInput}
+                placeholder="0"
+                value={editBudget}
+                onChangeText={setEditBudget}
+                placeholderTextColor={Colors.textMuted}
+                keyboardType="numeric"
+                autoFocus
+                underlineColorAndroid="transparent"
+              />
+            </View>
+            <Pressable
+              style={[styles.sheetBtn, (!editBudget.trim() || saving) && { opacity: 0.4 }]}
+              onPress={handleUpdateBudget}
+              disabled={!editBudget.trim() || saving}
+            >
+              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Save</Text>}
             </Pressable>
           </Pressable>
         </Pressable>
@@ -588,4 +650,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   sheetBtnText: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#FFFFFF" },
+  budgetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.background,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  currencySymbol: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: Colors.text, marginRight: 8 },
+  budgetInput: {
+    flex: 1,
+    fontFamily: "Inter_400Regular",
+    fontSize: 15,
+    color: Colors.text,
+    outlineWidth: 0,
+  } as any,
 });

@@ -39,7 +39,7 @@ function StatCard({ label, value, icon, color }: { label: string; value: number 
 
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
-  const { user, currentEvent, functions, tasks, participants, refreshParticipants, refreshFunctions, refreshNotifications } = useApp();
+  const { user, currentEvent, functions, tasks, participants, guests, guestFamilies, refreshParticipants, refreshFunctions, refreshNotifications } = useApp();
   const [myTasks, setMyTasks] = useState<Task[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -103,6 +103,19 @@ export default function DashboardScreen() {
   
   // Count helpers (participants excluding the manager)
   const helpersCount = participants.filter(p => p.role === "participant").length;
+  
+  // Guest statistics
+  const totalGuests = guests.length;
+  const confirmedGuests = guests.filter(g => g.rsvpStatus === 'accepted').length;
+  const pendingGuests = guests.filter(g => g.rsvpStatus === 'pending').length;
+  const declinedGuests = guests.filter(g => g.rsvpStatus === 'declined').length;
+  const accommodationRequired = guests.filter(g => g.accommodationRequired).length;
+  
+  // Budget overview
+  const eventBudget = currentEvent?.budget || 0;
+  const totalTaskBudget = eventTasks.reduce((sum, task) => sum + (task.budget || 0), 0);
+  const remainingBudget = eventBudget - totalTaskBudget;
+  const budgetUtilization = eventBudget > 0 ? (totalTaskBudget / eventBudget) * 100 : 0;
 
   const upcomingTasks = useMemo(
     () =>
@@ -227,6 +240,72 @@ export default function DashboardScreen() {
                 <StatCard label="Helpers" value={helpersCount} icon="people-outline" color={Colors.primary} />
               )}
             </Animated.View>
+
+            {!isParticipant && totalGuests > 0 && (
+              <Animated.View entering={FadeInDown.delay(150).duration(500)} style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Guest Overview</Text>
+                  <Pressable onPress={() => router.push("/(tabs)/guests")}>
+                    <Text style={styles.seeAll}>Manage</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.guestStatsGrid}>
+                  <View style={[styles.guestStatCard, { backgroundColor: Colors.primary + "15" }]}>
+                    <Text style={[styles.guestStatValue, { color: Colors.primary }]}>{totalGuests}</Text>
+                    <Text style={styles.guestStatLabel}>Total Guests</Text>
+                  </View>
+                  <View style={[styles.guestStatCard, { backgroundColor: Colors.success + "15" }]}>
+                    <Text style={[styles.guestStatValue, { color: Colors.success }]}>{confirmedGuests}</Text>
+                    <Text style={styles.guestStatLabel}>Confirmed</Text>
+                  </View>
+                  <View style={[styles.guestStatCard, { backgroundColor: Colors.warning + "15" }]}>
+                    <Text style={[styles.guestStatValue, { color: Colors.warning }]}>{pendingGuests}</Text>
+                    <Text style={styles.guestStatLabel}>Pending</Text>
+                  </View>
+                  <View style={[styles.guestStatCard, { backgroundColor: Colors.textSecondary + "15" }]}>
+                    <Text style={[styles.guestStatValue, { color: Colors.textSecondary }]}>{accommodationRequired}</Text>
+                    <Text style={styles.guestStatLabel}>Need Stay</Text>
+                  </View>
+                </View>
+              </Animated.View>
+            )}
+
+            {!isParticipant && eventBudget > 0 && (
+              <Animated.View entering={FadeInDown.delay(175).duration(500)} style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Budget Overview</Text>
+                </View>
+                <View style={styles.budgetCard}>
+                  <View style={styles.budgetRow}>
+                    <View style={styles.budgetItem}>
+                      <Text style={styles.budgetLabel}>Total Budget</Text>
+                      <Text style={styles.budgetValue}>₹{eventBudget.toLocaleString()}</Text>
+                    </View>
+                    <View style={styles.budgetItem}>
+                      <Text style={styles.budgetLabel}>Allocated</Text>
+                      <Text style={[styles.budgetValue, { color: Colors.primary }]}>₹{totalTaskBudget.toLocaleString()}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.budgetRow}>
+                    <View style={styles.budgetItem}>
+                      <Text style={styles.budgetLabel}>Remaining</Text>
+                      <Text style={[styles.budgetValue, { color: remainingBudget >= 0 ? Colors.success : Colors.priorityHigh }]}>
+                        ₹{remainingBudget.toLocaleString()}
+                      </Text>
+                    </View>
+                    <View style={styles.budgetItem}>
+                      <Text style={styles.budgetLabel}>Utilization</Text>
+                      <Text style={[styles.budgetValue, { color: budgetUtilization > 90 ? Colors.priorityHigh : Colors.success }]}>
+                        {budgetUtilization.toFixed(1)}%
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.budgetProgressBg}>
+                    <View style={[styles.budgetProgressFill, { width: `${Math.min(budgetUtilization, 100)}%` as any, backgroundColor: budgetUtilization > 90 ? Colors.priorityHigh : Colors.primary }]} />
+                  </View>
+                </View>
+              </Animated.View>
+            )}
 
             {!isParticipant && eventFunctions.length > 0 && (
               <Animated.View entering={FadeInDown.delay(150).duration(500)} style={styles.section}>
@@ -544,4 +623,31 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   fabText: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#FFFFFF" },
+  guestStatsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  guestStatCard: {
+    flex: 1,
+    minWidth: "45%",
+    borderRadius: 14,
+    padding: 14,
+    alignItems: "center",
+  },
+  guestStatValue: { fontFamily: "Inter_700Bold", fontSize: 22 },
+  guestStatLabel: { fontFamily: "Inter_500Medium", fontSize: 12, color: Colors.textMuted, marginTop: 4 },
+  budgetCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    padding: 20,
+    gap: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  budgetRow: { flexDirection: "row", justifyContent: "space-between" },
+  budgetItem: { flex: 1, gap: 4 },
+  budgetLabel: { fontFamily: "Inter_500Medium", fontSize: 12, color: Colors.textMuted },
+  budgetValue: { fontFamily: "Inter_700Bold", fontSize: 18, color: Colors.text },
+  budgetProgressBg: { height: 8, backgroundColor: Colors.border, borderRadius: 4, overflow: "hidden" },
+  budgetProgressFill: { height: "100%", borderRadius: 4 },
 });

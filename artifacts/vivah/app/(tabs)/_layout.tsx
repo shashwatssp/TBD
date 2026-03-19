@@ -22,6 +22,10 @@ function NativeTabLayout({ unreadCount }: { unreadCount: number }) {
         <Icon sf={{ default: "list.bullet", selected: "list.bullet" }} />
         <Label>Functions</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="guests">
+        <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
+        <Label>Guests</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="notifications">
         <Icon sf={{ default: "bell", selected: "bell.fill" }} />
         <Label>Alerts</Label>
@@ -82,6 +86,18 @@ function ClassicTabLayout({ unreadCount }: { unreadCount: number }) {
               <SymbolView name="list.bullet" tintColor={color} size={24} />
             ) : (
               <Feather name="list" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="guests"
+        options={{
+          title: "Guests",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="person.2" tintColor={color} size={24} />
+            ) : (
+              <Ionicons name="people-outline" size={22} color={color} />
             ),
         }}
       />
