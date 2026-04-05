@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -20,6 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { useApp, UserRole } from "@/context/AppContext";
 import { upsertUser, updateUser } from "@/lib/firebaseService";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 
 export default function ProfileSetupScreen() {
   const insets = useSafeAreaInsets();
@@ -51,7 +53,7 @@ export default function ProfileSetupScreen() {
       setStep("role");
     } catch (e) {
       console.error("Error in handleNameContinue:", e);
-      alert("Failed to create user. Please try again.");
+      Alert.alert("Error", "Failed to create user. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -71,7 +73,7 @@ export default function ProfileSetupScreen() {
       }
       
       console.log("Setting user with ID:", updated.id);
-      await setUser({ id: updated.id, name: updated.name, phone: updated.phone, role: updated.role });
+      await setUser({ id: updated.id, name: updated.name, phone: updated.phone, role: updated.role, subscriptionTier: "free" });
       router.dismissAll();
       if (role === "manager") {
         router.replace("/create-event");
@@ -80,16 +82,16 @@ export default function ProfileSetupScreen() {
       }
     } catch (e) {
       console.error("Error in handleRoleSelect:", e);
-      alert("Failed to complete setup. Please try again.");
+      Alert.alert("Error", "Failed to complete setup. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <LinearGradient colors={["#1A0505", "#3D0C0C", "#6B1A1A"]} style={styles.container}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ScrollView
+    <LinearGradient colors={[Colors.primaryDark, Colors.primary, Colors.primaryLight]} style={styles.container}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "padding"}>
+        <KeyboardAwareScrollViewCompat
           contentContainerStyle={[
             styles.scroll,
             {
@@ -195,7 +197,7 @@ export default function ProfileSetupScreen() {
               </Animated.View>
             </Animated.View>
           )}
-        </ScrollView>
+        </KeyboardAwareScrollViewCompat>
       </KeyboardAvoidingView>
     </LinearGradient>
   );

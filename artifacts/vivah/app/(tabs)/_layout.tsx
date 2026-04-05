@@ -22,6 +22,10 @@ function NativeTabLayout({ unreadCount }: { unreadCount: number }) {
         <Icon sf={{ default: "list.bullet", selected: "list.bullet" }} />
         <Label>Functions</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="polls">
+        <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
+        <Label>Polls</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="guests">
         <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
         <Label>Guests</Label>
@@ -86,6 +90,18 @@ function ClassicTabLayout({ unreadCount }: { unreadCount: number }) {
               <SymbolView name="list.bullet" tintColor={color} size={24} />
             ) : (
               <Feather name="list" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="polls"
+        options={{
+          title: "Polls",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="chart.bar" tintColor={color} size={24} />
+            ) : (
+              <Ionicons name="bar-chart-outline" size={22} color={color} />
             ),
         }}
       />

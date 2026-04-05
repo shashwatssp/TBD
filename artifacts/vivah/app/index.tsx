@@ -34,7 +34,7 @@ export default function WelcomeScreen() {
 
   return (
     <LinearGradient
-      colors={["#1A0505", "#3D0C0C", "#6B1A1A"]}
+      colors={[Colors.primaryDark, Colors.primary, Colors.primaryLight]}
       style={styles.container}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}

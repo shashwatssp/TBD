@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -59,9 +60,9 @@ export default function JoinEventScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={["#1A0505", "#3D0C0C"]} style={styles.headerGrad}>
+      <LinearGradient colors={[Colors.primaryDark, Colors.primary]} style={styles.headerGrad}>
         <View style={[styles.headerContent, { paddingTop: Platform.OS === "web" ? 67 : insets.top + 16 }]}>
-          <Pressable onPress={() => router.back()} style={styles.closeBtn}>
+          <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace("/(tabs)")} style={styles.closeBtn}>
             <Ionicons name="close" size={22} color="rgba(255,255,255,0.8)" />
           </Pressable>
           <View style={styles.iconWrap}>
@@ -72,8 +73,16 @@ export default function JoinEventScreen() {
         </View>
       </LinearGradient>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <View style={[styles.content, { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 32 }]}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "padding"}
+        keyboardVerticalOffset={Platform.OS === "android" ? 20 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 32 }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <Animated.View entering={FadeInDown.delay(100)} style={shakeStyle}>
             <TextInput
               style={[styles.codeInput, error ? { borderColor: Colors.error } : {}]}
@@ -109,7 +118,7 @@ export default function JoinEventScreen() {
               <Text style={styles.joinBtnText}>Join Event</Text>
             )}
           </Pressable>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );

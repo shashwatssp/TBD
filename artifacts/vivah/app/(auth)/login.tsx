@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -23,22 +24,24 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState("");
   const [focused, setFocused] = useState(false);
 
-  const isValid = phone.replace(/\D/g, "").length === 10;
-
   const handleSendOTP = () => {
-    if (!isValid) return;
+    if (!phone.trim()) {
+      Alert.alert("Phone Number Required", "Please enter a phone number");
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.push({ pathname: "/(auth)/otp", params: { phone } });
   };
 
   return (
     <LinearGradient
-      colors={["#1A0505", "#3D0C0C", "#6B1A1A"]}
+      colors={[Colors.primaryDark, Colors.primary, Colors.primaryLight]}
       style={styles.container}
     >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : "padding"}
+        keyboardVerticalOffset={Platform.OS === "android" ? 20 : 0}
       >
         <ScrollView
           contentContainerStyle={[
@@ -50,7 +53,7 @@ export default function LoginScreen() {
           ]}
           keyboardShouldPersistTaps="handled"
         >
-          <Pressable onPress={() => router.back()} style={styles.backBtn}>
+          <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace("/")} style={styles.backBtn}>
             <Ionicons name="chevron-back" size={24} color="rgba(255,255,255,0.8)" />
           </Pressable>
 
@@ -73,10 +76,9 @@ export default function LoginScreen() {
               <View style={styles.divider} />
               <TextInput
                 style={styles.input}
-                placeholder="10-digit mobile number"
+                placeholder="Mobile number"
                 placeholderTextColor="rgba(255,255,255,0.35)"
                 keyboardType="number-pad"
-                maxLength={10}
                 value={phone}
                 onChangeText={setPhone}
                 onFocus={() => setFocused(true)}
@@ -87,11 +89,11 @@ export default function LoginScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.sendBtn,
-                !isValid && styles.sendBtnDisabled,
-                { opacity: pressed && isValid ? 0.85 : 1 },
+                !phone.trim() && styles.sendBtnDisabled,
+                { opacity: pressed && phone.trim() ? 0.85 : 1 },
               ]}
               onPress={handleSendOTP}
-              disabled={!isValid}
+              disabled={!phone.trim()}
             >
               <Text style={styles.sendBtnText}>Send OTP</Text>
               <Ionicons name="arrow-forward" size={20} color="#fff" />

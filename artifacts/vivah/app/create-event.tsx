@@ -5,6 +5,7 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -26,7 +27,7 @@ interface FieldProps {
   onChangeText: (v: string) => void;
   placeholder: string;
   icon: string;
-  keyboardType?: "default" | "email-address" | "phone-pad";
+  keyboardType?: "default" | "email-address" | "phone-pad" | "number-pad";
   autoCapitalize?: "none" | "words" | "sentences";
   multiline?: boolean;
 }
@@ -123,7 +124,7 @@ export default function CreateEventScreen() {
     // Validate user has an ID
     if (!user.id) {
       console.error("User ID is missing. Please log in again.");
-      alert("Session expired. Please log in again.");
+      Alert.alert("Session Expired", "Please log in again.");
       router.replace("/(auth)/login");
       return;
     }
@@ -132,7 +133,7 @@ export default function CreateEventScreen() {
     setLoading(true);
     try {
       const eventName = form.name.trim() || `${form.brideName} & ${form.groomName} Wedding`;
-      await createEvent(user.id, {
+      await createEvent([user.id], {
         name: eventName,
         brideName: form.brideName.trim(),
         groomName: form.groomName.trim(),
@@ -148,7 +149,7 @@ export default function CreateEventScreen() {
       router.replace("/(tabs)");
     } catch (e) {
       console.error("Error creating event:", e);
-      alert("Failed to create event. Please try again.");
+      Alert.alert("Error", "Failed to create event. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -156,9 +157,9 @@ export default function CreateEventScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={["#1A0505", "#3D0C0C"]} style={styles.headerGrad}>
+      <LinearGradient colors={[Colors.primaryDark, Colors.primary]} style={styles.headerGrad}>
         <View style={[styles.headerContent, { paddingTop: Platform.OS === "web" ? 67 : insets.top + 16 }]}>
-          <Pressable onPress={() => router.back()} style={styles.closeBtn}>
+          <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace("/(tabs)")} style={styles.closeBtn}>
             <Ionicons name="close" size={22} color="rgba(255,255,255,0.8)" />
           </Pressable>
           <Text style={styles.headerTitle}>Create Wedding Event</Text>
@@ -168,7 +169,8 @@ export default function CreateEventScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : "padding"}
+        keyboardVerticalOffset={Platform.OS === "android" ? 20 : 0}
       >
         <ScrollView
           contentContainerStyle={[
@@ -265,6 +267,7 @@ export default function CreateEventScreen() {
                   { value: "telugu" as WeddingType, label: "Telugu", icon: "🎭" },
                   { value: "kerala" as WeddingType, label: "Kerala", icon: "🌴" },
                   { value: "rajasthani" as WeddingType, label: "Rajasthani", icon: "🏰" },
+                  { value: "custom" as WeddingType, label: "Custom", icon: "✨" },
                 ].map((type) => (
                   <Pressable
                     key={type.value}

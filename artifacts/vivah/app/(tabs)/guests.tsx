@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -19,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { RSVPStatus, useApp } from "@/context/AppContext";
 import InvitationPreview from "@/components/InvitationPreview";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 
 // RSVP Status Labels and Colors
 const RSVP_LABELS: Record<RSVPStatus, string> = {
@@ -134,6 +136,7 @@ export default function GuestsScreen() {
       await refreshGuests();
     } catch (error) {
       console.error("Error adding guest:", error);
+      Alert.alert("Error", "Failed to add guest. Please try again.");
     } finally {
       setAddingGuest(false);
     }
@@ -158,6 +161,7 @@ export default function GuestsScreen() {
       await refreshGuests();
     } catch (error) {
       console.error("Error adding family:", error);
+      Alert.alert("Error", "Failed to add family. Please try again.");
     } finally {
       setAddingFamily(false);
     }
@@ -170,6 +174,7 @@ export default function GuestsScreen() {
       await refreshGuests();
     } catch (error) {
       console.error("Error deleting guest:", error);
+      Alert.alert("Error", "Failed to delete guest. Please try again.");
     }
   };
 
@@ -180,6 +185,7 @@ export default function GuestsScreen() {
       await refreshGuests();
     } catch (error) {
       console.error("Error deleting family:", error);
+      Alert.alert("Error", "Failed to delete family. Please try again.");
     }
   };
 
@@ -318,6 +324,7 @@ export default function GuestsScreen() {
                       <Pressable
                         style={styles.shareBtn}
                         onPress={() => {
+                          console.log("Share button pressed for family:", familyId);
                           setSelectedFamilyId(familyId);
                           setShowInvitation(true);
                         }}
@@ -381,7 +388,15 @@ export default function GuestsScreen() {
       {/* Add Guest Modal */}
       <Modal visible={showAddGuest} transparent animationType="slide">
         <Pressable style={styles.overlay} onPress={() => setShowAddGuest(false)}>
-          <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+          >
+            <KeyboardAwareScrollViewCompat
+              style={styles.sheet}
+              contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+              keyboardShouldPersistTaps="handled"
+            >
             <View style={styles.grabber} />
             <Text style={styles.sheetTitle}>Add Guest</Text>
 
@@ -485,54 +500,64 @@ export default function GuestsScreen() {
                 <Text style={styles.sheetBtnText}>Add Guest</Text>
               )}
             </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
+          </KeyboardAwareScrollViewCompat>
+        </KeyboardAvoidingView>
+      </Pressable>
+    </Modal>
 
       {/* Add Family Modal */}
       <Modal visible={showAddFamily} transparent animationType="slide">
         <Pressable style={styles.overlay} onPress={() => setShowAddFamily(false)}>
-          <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}>
-            <View style={styles.grabber} />
-            <Text style={styles.sheetTitle}>Add Family</Text>
-
-            <Text style={styles.sheetLabel}>Family Name</Text>
-            <TextInput
-              style={styles.sheetInput}
-              placeholder="e.g. Sharma Family"
-              value={familyName}
-              onChangeText={setFamilyName}
-              placeholderTextColor={Colors.textMuted}
-              autoFocus
-              underlineColorAndroid="transparent"
-            />
-
-            <Text style={styles.sheetLabel}>Hotel Room (Optional)</Text>
-            <TextInput
-              style={styles.sheetInput}
-              placeholder="e.g. Room 201"
-              value={familyHotelRoom}
-              onChangeText={setFamilyHotelRoom}
-              placeholderTextColor={Colors.textMuted}
-              underlineColorAndroid="transparent"
-            />
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.sheetBtn,
-                (!familyName.trim() || addingFamily) && styles.sheetBtnDisabled,
-                { opacity: pressed && !!familyName.trim() ? 0.85 : 1 },
-              ]}
-              onPress={handleAddFamily}
-              disabled={!familyName.trim() || addingFamily}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+          >
+            <KeyboardAwareScrollViewCompat
+              style={styles.sheet}
+              contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+              keyboardShouldPersistTaps="handled"
             >
-              {addingFamily ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.sheetBtnText}>Add Family</Text>
-              )}
-            </Pressable>
-          </Pressable>
+              <View style={styles.grabber} />
+              <Text style={styles.sheetTitle}>Add Family</Text>
+
+              <Text style={styles.sheetLabel}>Family Name</Text>
+              <TextInput
+                style={styles.sheetInput}
+                placeholder="e.g. Sharma Family"
+                value={familyName}
+                onChangeText={setFamilyName}
+                placeholderTextColor={Colors.textMuted}
+                autoFocus
+                underlineColorAndroid="transparent"
+              />
+
+              <Text style={styles.sheetLabel}>Hotel Room (Optional)</Text>
+              <TextInput
+                style={styles.sheetInput}
+                placeholder="e.g. Room 201"
+                value={familyHotelRoom}
+                onChangeText={setFamilyHotelRoom}
+                placeholderTextColor={Colors.textMuted}
+                underlineColorAndroid="transparent"
+              />
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.sheetBtn,
+                  (!familyName.trim() || addingFamily) && styles.sheetBtnDisabled,
+                  { opacity: pressed && !!familyName.trim() ? 0.85 : 1 },
+                ]}
+                onPress={handleAddFamily}
+                disabled={!familyName.trim() || addingFamily}
+              >
+                {addingFamily ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.sheetBtnText}>Add Family</Text>
+                )}
+              </Pressable>
+            </KeyboardAwareScrollViewCompat>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
 
@@ -541,6 +566,7 @@ export default function GuestsScreen() {
         visible={showInvitation}
         familyId={selectedFamilyId || ""}
         onClose={() => {
+          console.log("Closing invitation preview");
           setShowInvitation(false);
           setSelectedFamilyId(null);
         }}
@@ -695,7 +721,7 @@ const styles = StyleSheet.create({
   },
   fabContainer: {
     position: "absolute",
-    bottom: Platform.OS === "web" ? 80 : 20,
+    bottom: Platform.OS === "web" ? 80 : 50,
     right: 20,
     flexDirection: "row",
     gap: 12,

@@ -3,6 +3,8 @@ import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
+  Alert,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -17,16 +19,18 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Colors } from "@/constants/colors";
 import { useApp } from "@/context/AppContext";
+import InviteHelperModal from "@/app/invite-helper";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 
 const FUNCTION_ICONS = [
-  { name: "Engagement", icon: "diamond-outline", color: "#9B59B6" },
-  { name: "Haldi", icon: "flower-outline", color: "#F39C12" },
-  { name: "Mehendi", icon: "leaf-outline", color: "#27AE60" },
-  { name: "Sangeet", icon: "musical-notes-outline", color: "#E91E63" },
-  { name: "Wedding Ceremony", icon: "heart-outline", color: "#C0392B" },
-  { name: "Reception", icon: "star-outline", color: "#D4A017" },
-  { name: "Tilak", icon: "sunny-outline", color: "#E67E22" },
-  { name: "Sagan", icon: "gift-outline", color: "#3498DB" },
+  { name: "Engagement", icon: "diamond-outline", color: Colors.functionColors.ceremony },
+  { name: "Haldi", icon: "flower-outline", color: Colors.functionColors.haldi },
+  { name: "Mehendi", icon: "leaf-outline", color: Colors.functionColors.mehendi },
+  { name: "Sangeet", icon: "musical-notes-outline", color: Colors.functionColors.sangeet },
+  { name: "Wedding Ceremony", icon: "heart-outline", color: Colors.functionColors.ceremony },
+  { name: "Reception", icon: "star-outline", color: Colors.functionColors.reception },
+  { name: "Tilak", icon: "sunny-outline", color: Colors.functionColors.custom },
+  { name: "Sagan", icon: "gift-outline", color: Colors.functionColors.gifts },
 ];
 
 export default function FunctionsScreen() {
@@ -36,6 +40,7 @@ export default function FunctionsScreen() {
   const [customName, setCustomName] = useState("");
   const [selectedIcon, setSelectedIcon] = useState(FUNCTION_ICONS[0]);
   const [addingFn, setAddingFn] = useState(false);
+  const [showInviteHelper, setShowInviteHelper] = useState(false);
 
   const isParticipant = user?.role === "participant";
 
@@ -45,9 +50,33 @@ export default function FunctionsScreen() {
   );
 
   const handleAdd = async () => {
-    if (!currentEvent || !user || addingFn) return;
+    console.log("[Functions] handleAdd called", {
+      hasCurrentEvent: !!currentEvent,
+      hasUser: !!user,
+      addingFn,
+      customName,
+      selectedIcon: selectedIcon.name
+    });
+    
+    if (!currentEvent || !user || addingFn) {
+      console.log("[Functions] handleAdd blocked", {
+        hasCurrentEvent: !!currentEvent,
+        hasUser: !!user,
+        addingFn
+      });
+      return;
+    }
+    
     setAddingFn(true);
     const name = customName.trim() || selectedIcon.name;
+    
+    console.log("[Functions] Creating function:", {
+      eventId: currentEvent.id,
+      name,
+      icon: selectedIcon.icon,
+      color: selectedIcon.color
+    });
+    
     try {
       await createFunction(currentEvent.id, {
         name,
@@ -56,19 +85,32 @@ export default function FunctionsScreen() {
         icon: selectedIcon.icon,
         color: selectedIcon.color,
       });
+      
+      console.log("[Functions] Function created successfully, adding notification");
+      
       await addNotification({
         userId: user.id,
         title: "New Function Added",
         message: `${name} has been added to the wedding`,
         type: "new_function",
       });
+      
+      console.log("[Functions] Notification added, triggering haptic feedback");
+      
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      
+      console.log("[Functions] Closing modal and resetting form");
+      
       setShowAdd(false);
       setCustomName("");
+      
+      console.log("[Functions] Modal closed successfully");
     } catch (e) {
-      console.error(e);
+      console.error("[Functions] Error adding function:", e);
+      Alert.alert("Error", "Failed to add function. Please try again.");
     } finally {
       setAddingFn(false);
+      console.log("[Functions] handleAdd completed");
     }
   };
 
@@ -104,10 +146,10 @@ export default function FunctionsScreen() {
           </View>
           {!isParticipant && (
             <Pressable
-              style={({ pressed }) => [styles.addBtn, { opacity: pressed ? 0.8 : 1 }]}
-              onPress={() => setShowAdd(true)}
+              style={({ pressed }) => [styles.inviteBtn, { opacity: pressed ? 0.8 : 1 }]}
+              onPress={() => setShowInviteHelper(true)}
             >
-              <Ionicons name="add" size={22} color="#FFFFFF" />
+              <Ionicons name="person-add-outline" size={22} color="#FFFFFF" />
             </Pressable>
           )}
         </View>
@@ -166,45 +208,70 @@ export default function FunctionsScreen() {
 
       <Modal visible={showAdd} transparent animationType="slide">
         <Pressable style={styles.modalOverlay} onPress={() => setShowAdd(false)}>
-          <Pressable style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
-            <View style={styles.grabber} />
-            <Text style={styles.modalTitle}>Add Function</Text>
-
-            <Text style={styles.modalLabel}>Choose a preset</Text>
-            <View style={styles.presetGrid}>
-              {FUNCTION_ICONS.map((item) => (
-                <Pressable
-                  key={item.name}
-                  style={[
-                    styles.presetItem,
-                    selectedIcon.name === item.name && { borderColor: item.color, backgroundColor: item.color + "15" },
-                  ]}
-                  onPress={() => setSelectedIcon(item)}
-                >
-                  <Ionicons name={item.icon as never} size={22} color={item.color} />
-                  <Text style={styles.presetName} numberOfLines={2}>{item.name}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <Text style={styles.modalLabel}>Custom name (optional)</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="e.g. Tilak Ceremony"
-              value={customName}
-              onChangeText={setCustomName}
-              placeholderTextColor={Colors.textMuted}
-            />
-
-            <Pressable
-              style={({ pressed }) => [styles.modalBtn, { opacity: pressed ? 0.85 : 1 }]}
-              onPress={handleAdd}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            keyboardVerticalOffset={Platform.OS === "android" ? 20 : 0}
+          >
+            <KeyboardAwareScrollViewCompat
+              style={styles.modalSheet}
+              contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+              keyboardShouldPersistTaps="handled"
             >
-              <Text style={styles.modalBtnText}>Add Function</Text>
-            </Pressable>
-          </Pressable>
+              <View style={styles.grabber} />
+              <Text style={styles.modalTitle}>Add Function</Text>
+
+              <Text style={styles.modalLabel}>Choose a preset</Text>
+              <View style={styles.presetGrid}>
+                {FUNCTION_ICONS.map((item) => (
+                  <Pressable
+                    key={item.name}
+                    style={[
+                      styles.presetItem,
+                      selectedIcon.name === item.name && { borderColor: item.color, backgroundColor: item.color + "15" },
+                    ]}
+                    onPress={() => setSelectedIcon(item)}
+                  >
+                    <Ionicons name={item.icon as never} size={22} color={item.color} />
+                    <Text style={styles.presetName} numberOfLines={2}>{item.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Text style={styles.modalLabel}>Custom name (optional)</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="e.g. Tilak Ceremony"
+                value={customName}
+                onChangeText={setCustomName}
+                placeholderTextColor={Colors.textMuted}
+              />
+
+              <Pressable
+                style={({ pressed }) => [styles.modalBtn, { opacity: pressed ? 0.85 : 1 }]}
+                onPress={handleAdd}
+              >
+                <Text style={styles.modalBtnText}>Add Function</Text>
+              </Pressable>
+            </KeyboardAwareScrollViewCompat>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
+
+      {/* Invite Helper Modal */}
+      <InviteHelperModal
+        visible={showInviteHelper}
+        onClose={() => setShowInviteHelper(false)}
+      />
+
+      {/* Floating Action Button */}
+      {!isParticipant && (
+        <Pressable
+          style={({ pressed }) => [styles.fab, { bottom: Platform.OS === "web" ? 100 : insets.bottom + 120, opacity: pressed ? 0.85 : 1 }]}
+          onPress={() => setShowAdd(true)}
+        >
+          <Ionicons name="add" size={28} color="#FFFFFF" />
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -220,11 +287,11 @@ const styles = StyleSheet.create({
   },
   screenTitle: { fontFamily: "Inter_700Bold", fontSize: 28, color: Colors.text },
   screenSub: { fontFamily: "Inter_400Regular", fontSize: 13, color: Colors.textMuted, marginTop: 2 },
-  addBtn: {
+  inviteBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.gold,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -309,4 +376,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalBtnText: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#FFFFFF" },
+  fab: {
+    position: "absolute",
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
 });

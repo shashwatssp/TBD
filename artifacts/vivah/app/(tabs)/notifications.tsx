@@ -19,7 +19,7 @@ const NOTIF_ICONS: Record<Notification["type"], { icon: string; color: string }>
   task_assigned: { icon: "person-add-outline", color: Colors.primary },
   deadline: { icon: "alarm-outline", color: Colors.warning },
   status_change: { icon: "refresh-circle-outline", color: Colors.success },
-  new_function: { icon: "add-circle-outline", color: "#9B59B6" },
+  new_function: { icon: "add-circle-outline", color: Colors.accent },
 };
 
 function timeAgo(dateStr: string): string {

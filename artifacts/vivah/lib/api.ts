@@ -49,7 +49,7 @@ export interface ApiEvent {
   weddingDate: string;
   description: string;
   eventCode: string;
-  managerId: string;
+  managerIds: string[];
   createdAt: string;
 }
 
@@ -105,7 +105,7 @@ export const api = {
 
   createEvent: (body: {
     name: string; brideName: string; groomName: string;
-    weddingCity: string; weddingDate: string; description?: string; managerId: string;
+    weddingCity: string; weddingDate: string; description?: string; managerIds: string[];
   }) => req<ApiEvent>("/events", { method: "POST", body: JSON.stringify(body) }),
 
   joinEvent: (body: { eventCode: string; userId: string }) =>

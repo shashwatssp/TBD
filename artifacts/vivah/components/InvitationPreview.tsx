@@ -10,6 +10,7 @@ import {
   Share,
   Platform,
   Linking,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -41,21 +42,31 @@ export default function InvitationPreview({
   }, [visible, currentEvent, familyId]);
 
   const loadInvitation = async () => {
-    if (!currentEvent) return;
+    if (!currentEvent) {
+      console.error("No current event found");
+      return;
+    }
     
     setLoading(true);
     try {
+      console.log("Loading invitation for event:", currentEvent.id, "family:", familyId);
       const data = await generateInvitation(currentEvent.id, familyId);
+      console.log("Invitation data loaded:", data);
       setInvitation(data);
     } catch (error) {
       console.error("Error loading invitation:", error);
+      // Show error state
+      setInvitation(null);
     } finally {
       setLoading(false);
     }
   };
 
   const handleShare = async () => {
-    if (!invitation) return;
+    if (!invitation) {
+      console.error("No invitation data available");
+      return;
+    }
 
     const familyName = invitation.family?.name || "Guest";
     const hotelRoom = invitation.family?.hotelRoom || "TBD";
@@ -82,13 +93,17 @@ We look forward to celebrating with you!
     `.trim();
 
     try {
+      console.log("Attempting to share invitation...");
       if (Platform.OS === 'android') {
         // For Android, open WhatsApp directly
         const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(message)}`;
+        console.log("Opening WhatsApp URL:", whatsappUrl);
         const canOpen = await Linking.canOpenURL(whatsappUrl);
         if (canOpen) {
           await Linking.openURL(whatsappUrl);
+          console.log("WhatsApp opened successfully");
         } else {
+          console.log("WhatsApp not available, falling back to general share");
           // Fallback to general share
           await Share.share({
             message,
@@ -96,6 +111,7 @@ We look forward to celebrating with you!
         }
       } else {
         // For iOS, use general share
+        console.log("Using general share for iOS");
         await Share.share({
           message,
         });
@@ -103,6 +119,12 @@ We look forward to celebrating with you!
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
       console.error("Error sharing:", error);
+      // Show error alert to user
+      Alert.alert(
+        "Share Failed",
+        "Unable to share the invitation. Please try again.",
+        [{ text: "OK" }]
+      );
     }
   };
 

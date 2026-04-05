@@ -4,9 +4,12 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,9 +18,12 @@ import {
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import DateTimePicker from "@react-native-community/datetimepicker";
 
 import { Colors } from "@/constants/colors";
 import { Task, TaskPriority, TaskStatus, useApp } from "@/context/AppContext";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
+import { FUNCTION_DEFAULT_SUBTASKS } from "@/lib/firebaseService";
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   not_started: "Not Started",
@@ -96,10 +102,14 @@ function TaskCard({ task, onPress }: { task: Task; onPress: () => void }) {
               </Text>
             </View>
           )}
-          {task.assignedToName && (
+          {task.assignedToName && task.assignedToName.length > 0 && (
             <View style={styles.metaItem}>
               <Ionicons name="person-outline" size={12} color={Colors.textMuted} />
-              <Text style={styles.metaText}>{task.assignedToName}</Text>
+              <Text style={styles.metaText}>
+                {task.assignedToName.length === 1
+                  ? task.assignedToName[0]
+                  : `${task.assignedToName[0]} +${task.assignedToName.length - 1}`}
+              </Text>
             </View>
           )}
           {task.subtasks.length > 0 && (
@@ -117,14 +127,17 @@ function TaskCard({ task, onPress }: { task: Task; onPress: () => void }) {
 export default function FunctionDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { functions, tasks, user, participants, createTask, addNotification, loadTasksForFunction, loadingTasks, refreshParticipants } = useApp();
+  const { functions, tasks, user, participants, createTask, addSubtask, addNotification, loadTasksForFunction, loadingTasks, refreshParticipants } = useApp();
   const [showAdd, setShowAdd] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [filterStatus, setFilterStatus] = useState<TaskStatus | "all">("all");
-  const [selectedParticipant, setSelectedParticipant] = useState<{ id: string; name: string } | null>(null);
+  const [selectedParticipants, setSelectedParticipants] = useState<{ id: string; name: string }[]>([]);
   const [addingTask, setAddingTask] = useState(false);
   const [budget, setBudget] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [dueDate, setDueDate] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const isParticipant = user?.role === "participant";
 
@@ -150,7 +163,7 @@ export default function FunctionDetailScreen() {
 
   const displayTasks = useMemo(() => {
     if (isParticipant && user) {
-      return fnTasks.filter((t) => t.assignedTo === user.id);
+      return fnTasks.filter((t) => t.assignedTo.includes(user.id));
     }
     return fnTasks;
   }, [fnTasks, isParticipant, user]);
@@ -167,25 +180,37 @@ export default function FunctionDetailScreen() {
     if (!newTitle.trim() || !fn || !user || addingTask) return;
     setAddingTask(true);
     try {
-      const assignee = selectedParticipant ?? { id: user.id, name: user.name };
-      await createTask({
+      const assignees = selectedParticipants.length > 0 ? selectedParticipants : [{ id: user.id, name: user.name }];
+      const createdTask = await createTask({
         functionId: fn.id,
         title: newTitle.trim(),
         description: "",
-        dueDate: null,
-        assignedTo: assignee.id,
-        assignedToName: assignee.name,
+        dueDate: dueDate ? dueDate.toISOString() : null,
+        assignedTo: assignees.map(a => a.id),
+        assignedToName: assignees.map(a => a.name),
         priority,
         status: "not_started",
         budget: budget.trim() ? parseFloat(budget.trim()) : null,
       });
-      if (selectedParticipant) {
-        await addNotification({
-          userId: selectedParticipant.id,
-          title: "Task Assigned to You",
-          message: `"${newTitle.trim()}" has been assigned to you in ${fn.name}`,
-          type: "task_assigned",
-        });
+      
+      // Add default subtasks for this function type
+      const defaultSubtasks = FUNCTION_DEFAULT_SUBTASKS[fn.name] || [];
+      if (defaultSubtasks.length > 0) {
+        for (const subtaskTitle of defaultSubtasks) {
+          await addSubtask(createdTask.id, subtaskTitle);
+        }
+      }
+      
+      // Send notifications to all assignees
+      for (const assignee of assignees) {
+        if (assignee.id !== user.id) {
+          await addNotification({
+            userId: assignee.id,
+            title: "Task Assigned to You",
+            message: `"${newTitle.trim()}" has been assigned to you in ${fn.name}`,
+            type: "task_assigned",
+          });
+        }
       }
       await addNotification({
         userId: user.id,
@@ -195,16 +220,42 @@ export default function FunctionDetailScreen() {
       });
       // Refresh participants after creating task
       await refreshParticipants();
+      // Refresh tasks after creating task
+      await handleRefresh();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowAdd(false);
       setNewTitle("");
       setPriority("medium");
-      setSelectedParticipant(null);
+      setSelectedParticipants([]);
       setBudget("");
+      setDueDate(null);
     } catch (e) {
       console.error(e);
+      Alert.alert(
+        "Error",
+        "Failed to add task. Please try again.",
+        [{ text: "OK" }]
+      );
     } finally {
       setAddingTask(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      if (id) {
+        await loadTasksForFunction(id);
+      }
+    } catch (error) {
+      console.error("Error refreshing tasks:", error);
+      Alert.alert(
+        "Error",
+        "Failed to refresh tasks. Please try again.",
+        [{ text: "OK" }]
+      );
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -235,12 +286,6 @@ export default function FunctionDetailScreen() {
           <View style={[styles.fnIcon, { backgroundColor: fn.color + "25" }]}>
             <Ionicons name={fn.icon as never} size={26} color={fn.color} />
           </View>
-          {!isParticipant && (
-            <Pressable style={styles.addFab} onPress={() => setShowAdd(true)}>
-              <Ionicons name="add" size={22} color="#FFFFFF" />
-            </Pressable>
-          )}
-          {isParticipant && <View style={{ width: 44 }} />}
         </View>
         <Text style={styles.fnTitle}>{fn.name}</Text>
         <View style={styles.progressRow}>
@@ -272,12 +317,20 @@ export default function FunctionDetailScreen() {
         ))}
       </View>
 
-      <ScrollView
+      <KeyboardAwareScrollViewCompat
         contentContainerStyle={[
           styles.list,
           { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 24 },
         ]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
       >
         {loadingTasks && fnTasks.length === 0 ? (
           <View style={styles.empty}>
@@ -307,24 +360,38 @@ export default function FunctionDetailScreen() {
             </Animated.View>
           ))
         )}
-      </ScrollView>
+      </KeyboardAwareScrollViewCompat>
+
+      {/* Floating Action Button */}
+      {!isParticipant && (
+        <Pressable
+          style={({ pressed }) => [styles.fab, { bottom: Platform.OS === "web" ? 34 : insets.bottom + 20, opacity: pressed ? 0.85 : 1 }]}
+          onPress={() => setShowAdd(true)}
+        >
+          <Ionicons name="add" size={28} color="#FFFFFF" />
+        </Pressable>
+      )}
 
       <Modal visible={showAdd} transparent animationType="slide">
         <Pressable style={styles.overlay} onPress={() => setShowAdd(false)}>
-          <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}>
-            <View style={styles.grabber} />
-            <Text style={styles.sheetTitle}>Add Task</Text>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+          >
+            <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}>
+              <View style={styles.grabber} />
+              <Text style={styles.sheetTitle}>Add Task</Text>
 
-            <Text style={styles.sheetLabel}>Task Name</Text>
-            <TextInput
-              style={styles.sheetInput}
-              placeholder="e.g. Book photographer"
-              value={newTitle}
-              onChangeText={setNewTitle}
-              placeholderTextColor={Colors.textMuted}
-              autoFocus
-              underlineColorAndroid="transparent"
-            />
+              <Text style={styles.sheetLabel}>Task Name</Text>
+              <TextInput
+                style={styles.sheetInput}
+                placeholder="e.g. Book photographer"
+                value={newTitle}
+                onChangeText={setNewTitle}
+                placeholderTextColor={Colors.textMuted}
+                autoFocus
+                underlineColorAndroid="transparent"
+              />
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
               <View style={{ flexDirection: "row", gap: 8 }}>
@@ -336,43 +403,80 @@ export default function FunctionDetailScreen() {
               </View>
             </ScrollView>
 
-            {participants.filter((p) => p.role === "participant").length > 0 && (
-              <>
-                <Text style={styles.sheetLabel}>Assign to</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
-                  <View style={{ flexDirection: "row", gap: 8 }}>
-                    <Pressable
-                      style={[
-                        styles.participantChip,
-                        !selectedParticipant && { borderColor: Colors.primary, backgroundColor: Colors.primary + "15" },
-                      ]}
-                      onPress={() => setSelectedParticipant(null)}
-                    >
-                      <Text style={[styles.participantChipText, !selectedParticipant && { color: Colors.primary }]}>
-                        Myself
-                      </Text>
-                    </Pressable>
-                    {participants
-                      .filter((p) => p.role === "participant")
-                      .map((p) => (
-                        <Pressable
-                          key={p.id}
-                          style={[
-                            styles.participantChip,
-                            selectedParticipant?.id === p.id && { borderColor: Colors.primary, backgroundColor: Colors.primary + "15" },
-                          ]}
-                          onPress={() => setSelectedParticipant({ id: p.id, name: p.name })}
-                        >
-                          <Ionicons name="person-outline" size={12} color={selectedParticipant?.id === p.id ? Colors.primary : Colors.textMuted} />
-                          <Text style={[styles.participantChipText, selectedParticipant?.id === p.id && { color: Colors.primary }]}>
-                            {p.name}
-                          </Text>
-                        </Pressable>
-                      ))}
-                  </View>
-                </ScrollView>
-              </>
+            <Text style={styles.sheetLabel}>
+              Assign to {selectedParticipants.length > 0 && `(${selectedParticipants.length}/2)`}
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <Pressable
+                  style={[
+                    styles.participantChip,
+                    selectedParticipants.length === 0 && { borderColor: Colors.primary, backgroundColor: Colors.primary + "15" },
+                  ]}
+                  onPress={() => setSelectedParticipants([])}
+                >
+                  <Text style={[styles.participantChipText, selectedParticipants.length === 0 && { color: Colors.primary }]}>
+                    Myself
+                  </Text>
+                </Pressable>
+                {participants
+                  .filter((p) => p.role === "participant")
+                  .map((p) => {
+                    const isSelected = selectedParticipants.some(sp => sp.id === p.id);
+                    return (
+                      <Pressable
+                        key={p.id}
+                        style={[
+                          styles.participantChip,
+                          isSelected && { borderColor: Colors.primary, backgroundColor: Colors.primary + "15" },
+                        ]}
+                        onPress={() => {
+                          if (isSelected) {
+                            // Remove from selection
+                            setSelectedParticipants(selectedParticipants.filter(sp => sp.id !== p.id));
+                          } else if (selectedParticipants.length < 2) {
+                            // Add to selection (max 2)
+                            setSelectedParticipants([...selectedParticipants, { id: p.id, name: p.name }]);
+                          } else {
+                            // Max 2 reached, show feedback
+                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                          }
+                        }}
+                      >
+                        <Ionicons
+                          name={isSelected ? "checkmark-circle" : "person-outline"}
+                          size={12}
+                          color={isSelected ? Colors.primary : Colors.textMuted}
+                        />
+                        <Text style={[styles.participantChipText, isSelected && { color: Colors.primary }]}>
+                          {p.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+              </View>
+            </ScrollView>
+            {selectedParticipants.length === 2 && (
+              <Text style={styles.maxAssigneesText}>Maximum 2 assignees per task</Text>
             )}
+
+            <Text style={styles.sheetLabel}>Due Date (Optional)</Text>
+            <Pressable
+              style={styles.dateRow}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Ionicons name="calendar-outline" size={18} color={Colors.textMuted} />
+              <Text style={styles.dateText}>
+                {dueDate
+                  ? dueDate.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+                  : "Select due date"}
+              </Text>
+              {dueDate && (
+                <Pressable onPress={() => setDueDate(null)}>
+                  <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+                </Pressable>
+              )}
+            </Pressable>
 
             <Text style={styles.sheetLabel}>Budget (Optional)</Text>
             <View style={styles.budgetRow}>
@@ -421,9 +525,26 @@ export default function FunctionDetailScreen() {
                 <Text style={styles.addTaskBtnText}>Add Task</Text>
               )}
             </Pressable>
-          </Pressable>
+            </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
+
+      {showDatePicker && (
+        <DateTimePicker
+          value={dueDate || new Date()}
+          mode="date"
+          display={Platform.OS === "ios" ? "compact" : "default"}
+          onChange={(event, selectedDate) => {
+            setShowDatePicker(false);
+            if (selectedDate) {
+              setDueDate(selectedDate);
+            }
+          }}
+          minimumDate={new Date()}
+          style={{ width: "100%" }}
+        />
+      )}
     </View>
   );
 }
@@ -541,6 +662,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   participantChipText: { fontFamily: "Inter_500Medium", fontSize: 12, color: Colors.textMuted },
+  maxAssigneesText: { fontFamily: "Inter_400Regular", fontSize: 11, color: Colors.warning, marginTop: 4 },
   budgetRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -559,6 +681,23 @@ const styles = StyleSheet.create({
     color: Colors.text,
     outlineWidth: 0,
   } as any,
+  dateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: Colors.background,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  dateText: {
+    flex: 1,
+    fontFamily: "Inter_400Regular",
+    fontSize: 15,
+    color: Colors.textMuted,
+  },
   priorityRow: { flexDirection: "row", gap: 10 },
   priorityChip: {
     flex: 1,
@@ -577,4 +716,19 @@ const styles = StyleSheet.create({
   },
   addTaskBtnDisabled: { opacity: 0.4 },
   addTaskBtnText: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#FFFFFF" },
+  fab: {
+    position: "absolute",
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
 });

@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -79,21 +80,24 @@ export default function OTPScreen() {
 
   return (
     <LinearGradient
-      colors={["#1A0505", "#3D0C0C", "#6B1A1A"]}
+      colors={[Colors.primaryDark, Colors.primary, Colors.primaryLight]}
       style={styles.container}
     >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : "padding"}
+        keyboardVerticalOffset={Platform.OS === "android" ? 20 : 0}
       >
-        <View
-          style={[
+        <ScrollView
+          contentContainerStyle={[
             styles.content,
             {
               paddingTop: Platform.OS === "web" ? 67 : insets.top + 24,
               paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 32,
             },
           ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
           <Pressable onPress={() => router.back()} style={styles.backBtn}>
             <Ionicons name="chevron-back" size={24} color="rgba(255,255,255,0.8)" />
@@ -154,7 +158,7 @@ export default function OTPScreen() {
               </Pressable>
             )}
           </Animated.View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>
   );
@@ -178,9 +182,9 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 20,
-    backgroundColor: "rgba(212,160,23,0.15)",
+    backgroundColor: Colors.gold + "26",
     borderWidth: 1,
-    borderColor: "rgba(212,160,23,0.3)",
+    borderColor: Colors.gold + "4D",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 8,
@@ -221,7 +225,7 @@ const styles = StyleSheet.create({
   },
   otpCellFilled: {
     borderColor: Colors.gold,
-    backgroundColor: "rgba(212,160,23,0.12)",
+    backgroundColor: Colors.gold + "1F",
   },
   otpCellError: {
     borderColor: Colors.error,
