@@ -18,7 +18,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Colors } from "@/constants/colors";
-import { useApp } from "@/context/AppContext";
+import { useApp, type WeddingFunction } from "@/context/AppContext";
 import InviteHelperModal from "@/app/invite-helper";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 
@@ -35,8 +35,10 @@ const FUNCTION_ICONS = [
 
 export default function FunctionsScreen() {
   const insets = useSafeAreaInsets();
-  const { user, currentEvent, functions, tasks, createFunction, addNotification } = useApp();
+  const { user, currentEvent, functions, tasks, createFunction, updateFunction, deleteFunction, addNotification } = useApp();
   const [showAdd, setShowAdd] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editingFunction, setEditingFunction] = useState<WeddingFunction | null>(null);
   const [customName, setCustomName] = useState("");
   const [selectedIcon, setSelectedIcon] = useState(FUNCTION_ICONS[0]);
   const [addingFn, setAddingFn] = useState(false);
@@ -112,6 +114,62 @@ export default function FunctionsScreen() {
       setAddingFn(false);
       console.log("[Functions] handleAdd completed");
     }
+  };
+
+  const handleEdit = async () => {
+    if (!editingFunction || !user || addingFn) return;
+    
+    setAddingFn(true);
+    const name = customName.trim() || selectedIcon.name;
+    
+    try {
+      await updateFunction(editingFunction.id, {
+        name,
+        icon: selectedIcon.icon,
+        color: selectedIcon.color,
+      });
+      
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowEdit(false);
+      setCustomName("");
+      setEditingFunction(null);
+    } catch (e) {
+      console.error("[Functions] Error editing function:", e);
+      Alert.alert("Error", "Failed to edit function. Please try again.");
+    } finally {
+      setAddingFn(false);
+    }
+  };
+
+  const handleDelete = (fn: WeddingFunction) => {
+    Alert.alert(
+      "Delete Function",
+      `Are you sure you want to delete "${fn.name}"? This will also delete all tasks in this function.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteFunction(fn.id);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch (e) {
+              console.error("[Functions] Error deleting function:", e);
+              Alert.alert("Error", "Failed to delete function. Please try again.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const openEditModal = (fn: WeddingFunction) => {
+    setEditingFunction(fn);
+    setCustomName(fn.name);
+    const matchingIcon = FUNCTION_ICONS.find(icon => icon.name === fn.name) || FUNCTION_ICONS[0];
+    setSelectedIcon(matchingIcon);
+    setShowEdit(true);
   };
 
   if (!currentEvent) {
@@ -197,6 +255,28 @@ export default function FunctionsScreen() {
                       </View>
                     </View>
                     <View style={[styles.fnStatusDot, { backgroundColor: progress === 1 && fnTasks.length > 0 ? Colors.success : fn.color }]} />
+                    {!isParticipant && (
+                      <View style={styles.actionButtons}>
+                        <Pressable
+                          style={({ pressed }) => [styles.actionBtn, { opacity: pressed ? 0.7 : 1 }]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            openEditModal(fn);
+                          }}
+                        >
+                          <Ionicons name="create-outline" size={18} color={Colors.textMuted} />
+                        </Pressable>
+                        <Pressable
+                          style={({ pressed }) => [styles.actionBtn, { opacity: pressed ? 0.7 : 1 }]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleDelete(fn);
+                          }}
+                        >
+                          <Ionicons name="trash-outline" size={18} color={Colors.error} />
+                        </Pressable>
+                      </View>
+                    )}
                     <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
                   </Pressable>
                 </Animated.View>
@@ -251,6 +331,58 @@ export default function FunctionsScreen() {
                 onPress={handleAdd}
               >
                 <Text style={styles.modalBtnText}>Add Function</Text>
+              </Pressable>
+            </KeyboardAwareScrollViewCompat>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+
+      {/* Edit Function Modal */}
+      <Modal visible={showEdit} transparent animationType="slide">
+        <Pressable style={styles.modalOverlay} onPress={() => setShowEdit(false)}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            keyboardVerticalOffset={Platform.OS === "android" ? 20 : 0}
+          >
+            <KeyboardAwareScrollViewCompat
+              style={styles.modalSheet}
+              contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.grabber} />
+              <Text style={styles.modalTitle}>Edit Function</Text>
+
+              <Text style={styles.modalLabel}>Choose a preset</Text>
+              <View style={styles.presetGrid}>
+                {FUNCTION_ICONS.map((item) => (
+                  <Pressable
+                    key={item.name}
+                    style={[
+                      styles.presetItem,
+                      selectedIcon.name === item.name && { borderColor: item.color, backgroundColor: item.color + "15" },
+                    ]}
+                    onPress={() => setSelectedIcon(item)}
+                  >
+                    <Ionicons name={item.icon as never} size={22} color={item.color} />
+                    <Text style={styles.presetName} numberOfLines={2}>{item.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Text style={styles.modalLabel}>Custom name (optional)</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="e.g. Tilak Ceremony"
+                value={customName}
+                onChangeText={setCustomName}
+                placeholderTextColor={Colors.textMuted}
+              />
+
+              <Pressable
+                style={({ pressed }) => [styles.modalBtn, { opacity: pressed ? 0.85 : 1 }]}
+                onPress={handleEdit}
+              >
+                <Text style={styles.modalBtnText}>Save Changes</Text>
               </Pressable>
             </KeyboardAwareScrollViewCompat>
           </KeyboardAvoidingView>
@@ -316,6 +448,15 @@ const styles = StyleSheet.create({
   fnProgressBg: { height: 4, backgroundColor: Colors.border, borderRadius: 2, overflow: "hidden", marginTop: 4 },
   fnProgressFill: { height: "100%", borderRadius: 2 },
   fnStatusDot: { width: 8, height: 8, borderRadius: 4 },
+  actionButtons: { flexDirection: "row", gap: 8, alignItems: "center" },
+  actionBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.background,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   empty: { paddingTop: 80, alignItems: "center", gap: 12 },
   emptyTitle: { fontFamily: "Inter_600SemiBold", fontSize: 18, color: Colors.textSecondary },
   emptySub: { fontFamily: "Inter_400Regular", fontSize: 14, color: Colors.textMuted, textAlign: "center" },

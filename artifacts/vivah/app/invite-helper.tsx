@@ -145,13 +145,17 @@ export default function InviteHelperModal({ visible, onClose }: InviteHelperModa
     console.log("[InviteHelper] Sending invitation to:", formattedPhone);
 
     try {
-      // Create invitation message
+      // Create deep link for the invitation
+      const deepLink = `vivah://join-event?code=${currentEvent.eventCode}`;
+      
+      // Create invitation message with clickable link
       const invitationMessage = `🎉 ${user.name} has invited you to help plan their wedding!\n\n` +
         `Event: ${currentEvent.name}\n` +
         `Bride: ${currentEvent.brideName}\n` +
         `Groom: ${currentEvent.groomName}\n\n` +
-        `Join Code: ${currentEvent.eventCode}\n\n` +
-        `Download the Vivah Wedding Planner app and enter this code to join!`;
+        `📱 Click this link to join:\n${deepLink}\n\n` +
+        `Or use Join Code: ${currentEvent.eventCode}\n\n` +
+        `Download the Vivah Wedding Planner app if you haven't already!`;
 
       console.log("[InviteHelper] Invitation message created:", { messageLength: invitationMessage.length });
 

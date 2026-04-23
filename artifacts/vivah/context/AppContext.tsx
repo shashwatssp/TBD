@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { BackHandler, Platform } from "react-native";
 import {
   upsertUser,
   updateUser,
@@ -15,14 +16,20 @@ import {
   getEvent,
   getParticipants,
   addParticipant as addParticipantFirebase,
+  deleteParticipant as deleteParticipantFirebase,
   getFunctions,
   createFunction as createFunctionFirebase,
+  updateFunction as updateFunctionFirebase,
+  deleteFunction as deleteFunctionFirebase,
   getTask as getTaskFirebase,
   getTasks,
   createTask as createTaskFirebase,
   updateTask as updateTaskFirebase,
+  deleteTask as deleteTaskFirebase,
   addSubtask as addSubtaskFirebase,
   toggleSubtask as toggleSubtaskFirebase,
+  updateSubtask as updateSubtaskFirebase,
+  deleteSubtask as deleteSubtaskFirebase,
   getNotifications,
   createNotification as createNotificationFirebase,
   markNotificationRead as markNotificationReadFirebase,
@@ -136,7 +143,10 @@ interface AppContextType {
   createFunction: (eventId: string, fn: {
     name: string; date?: string | null; description?: string; icon: string; color: string;
   }) => Promise<WeddingFunction>;
+  updateFunction: (functionId: string, updates: Partial<WeddingFunction>) => Promise<WeddingFunction>;
+  deleteFunction: (functionId: string) => Promise<void>;
   refreshFunctions: () => Promise<void>;
+  refreshTasks: () => Promise<void>;
   loadTasksForFunction: (functionId: string) => Promise<Task[]>;
   getTask: (taskId: string) => Promise<Task>;
   createTask: (task: {
@@ -145,8 +155,11 @@ interface AppContextType {
     priority: TaskPriority; status: TaskStatus; budget?: number | null;
   }) => Promise<Task>;
   updateTask: (taskId: string, updates: Partial<Task>) => Promise<Task>;
+  deleteTask: (taskId: string) => Promise<void>;
   addSubtask: (taskId: string, title: string) => Promise<Subtask>;
   toggleSubtask: (taskId: string, subtaskId: string) => Promise<void>;
+  updateSubtask: (subtaskId: string, updates: { title: string }) => Promise<Subtask>;
+  deleteSubtask: (subtaskId: string) => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
   addNotification: (n: { userId: string; title: string; message: string; type: Notification["type"] }) => Promise<void>;
   refreshNotifications: () => Promise<void>;
@@ -157,8 +170,9 @@ interface AppContextType {
     name?: string;
     role?: UserRole;
     phoneNumber?: string;
-  }) => Promise<void>;
-  unreadCount: number;
+    }) => Promise<void>;
+    deleteParticipant: (eventId: string, participantId: string) => Promise<void>;
+    unreadCount: number;
   // Guest Management
   createGuestFamily: (data: Omit<GuestFamilyType, 'id' | 'createdAt' | 'updatedAt'>) => Promise<GuestFamilyType>;
   updateGuestFamily: (familyId: string, updates: Partial<GuestFamilyType>) => Promise<GuestFamilyType>;
@@ -421,9 +435,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return created;
   }, [currentEvent]);
 
+  const updateFunction = useCallback(async (functionId: string, updates: Partial<WeddingFunction>): Promise<WeddingFunction> => {
+    const updated = await updateFunctionFirebase(functionId, updates);
+    setFunctions((prev) => prev.map((f) => f.id === functionId ? updated : f));
+    return updated;
+  }, []);
+
+  const deleteFunction = useCallback(async (functionId: string): Promise<void> => {
+    await deleteFunctionFirebase(functionId);
+    setFunctions((prev) => prev.filter((f) => f.id !== functionId));
+    setTasks((prev) => prev.filter((t) => t.functionId !== functionId));
+  }, []);
+
   const refreshFunctions = useCallback(async () => {
     if (!currentEvent) return;
     await loadFunctions(currentEvent.id);
+  }, [currentEvent]);
+
+  const refreshTasks = useCallback(async () => {
+    if (!currentEvent) return;
+    setLoadingTasks(true);
+    try {
+      const t = await getTasks({ eventId: currentEvent.id });
+      setTasks(t);
+    } catch (e) {
+      console.error("refreshTasks error", e);
+    } finally {
+      setLoadingTasks(false);
+    }
   }, [currentEvent]);
 
   const loadTasksForFunction = useCallback(async (functionId: string): Promise<Task[]> => {
@@ -460,6 +499,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return updated;
   }, []);
 
+  const deleteTask = useCallback(async (taskId: string): Promise<void> => {
+    await deleteTaskFirebase(taskId);
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+  }, []);
+
   const addSubtask = useCallback(async (taskId: string, title: string): Promise<Subtask> => {
     const subtask = await addSubtaskFirebase(taskId, title);
     setTasks((prev) => prev.map((t) => {
@@ -481,6 +525,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       };
     }));
   }, [tasks]);
+
+  const updateSubtask = useCallback(async (subtaskId: string, updates: { title: string }): Promise<Subtask> => {
+    const updated = await updateSubtaskFirebase(subtaskId, updates);
+    setTasks((prev) => prev.map((t) => {
+      if (!t.subtasks.some(st => st.id === subtaskId)) return t;
+      return {
+        ...t,
+        subtasks: t.subtasks.map((st) => st.id === subtaskId ? updated : st),
+      };
+    }));
+    return updated;
+  }, []);
+
+  const deleteSubtask = useCallback(async (subtaskId: string): Promise<void> => {
+    await deleteSubtaskFirebase(subtaskId);
+    setTasks((prev) => prev.map((t) => {
+      if (!t.subtasks.some(st => st.id === subtaskId)) return t;
+      return {
+        ...t,
+        subtasks: t.subtasks.filter((st) => st.id !== subtaskId),
+      };
+    }));
+  }, []);
 
   const addNotification = useCallback(async (n: {
     userId: string; title: string; message: string; type: Notification["type"];
@@ -533,6 +600,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.warn("[AppContext] Event ID mismatch, not refreshing participants", {
         currentEventId: currentEvent?.id,
         dataEventId: data.eventId
+      });
+    }
+  }, [currentEvent]);
+
+  const deleteParticipant = useCallback(async (eventId: string, participantId: string): Promise<void> => {
+    console.log("[AppContext] deleteParticipant called", { eventId, participantId });
+    await deleteParticipantFirebase(eventId, participantId);
+    console.log("[AppContext] Participant deleted from Firebase, refreshing participants list...");
+    // Refresh participants list
+    if (currentEvent?.id === eventId) {
+      await loadParticipants(eventId);
+      console.log("[AppContext] Participants refreshed successfully");
+    } else {
+      console.warn("[AppContext] Event ID mismatch, not refreshing participants", {
+        currentEventId: currentEvent?.id,
+        dataEventId: eventId
       });
     }
   }, [currentEvent]);
@@ -810,6 +893,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       eventIdRef.current = null;
       
       console.log("Logout completed successfully");
+      
+      // Close the app on Android after logout
+      if (Platform.OS === 'android') {
+        console.log("Closing app on Android");
+        // Use setTimeout to ensure state is cleared before exiting
+        setTimeout(() => {
+          BackHandler.exitApp();
+        }, 500);
+      }
+      // On iOS, we cannot programmatically exit the app (Apple guidelines)
+      // The app will navigate to login screen automatically since user state is cleared
     } catch (error) {
       console.error("Logout error:", error);
       throw error;
@@ -842,18 +936,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         createEvent,
         joinEvent,
         createFunction,
+        updateFunction,
+        deleteFunction,
         refreshFunctions,
+        refreshTasks,
         loadTasksForFunction,
         getTask,
         createTask,
         updateTask,
+        deleteTask,
         addSubtask,
         toggleSubtask,
+        updateSubtask,
+        deleteSubtask,
         markNotificationRead,
         addNotification,
         refreshNotifications,
         refreshParticipants,
         addParticipant,
+        deleteParticipant,
         unreadCount,
         createGuestFamily,
         updateGuestFamily,

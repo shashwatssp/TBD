@@ -14,14 +14,25 @@
       "backgroundColor": "#1A0505"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to upload images for wedding planning.",
+        "NSPhotoLibraryAddUsageDescription": "This app needs access to save images to your photo library.",
+        "NSCameraUsageDescription": "This app needs access to your camera to take photos for wedding planning."
+      }
     },
     "android": {
       "package": "com.shashwatssp.vivah",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#1A0505"
-      }
+      },
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon.png"

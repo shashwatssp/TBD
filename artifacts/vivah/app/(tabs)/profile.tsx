@@ -255,13 +255,19 @@ export default function ProfileScreen() {
               const logoutDuration = Date.now() - logoutStartTime;
               console.log("Logout function completed in", logoutDuration, "ms");
               
-              console.log("Resetting isLoggingOut to false");
-              setIsLoggingOut(false);
+              // Don't reset isLoggingOut - the app will exit on Android
+              // On iOS, the app will navigate to login screen automatically
+              if (Platform.OS !== 'android') {
+                console.log("Resetting isLoggingOut to false (iOS/Web)");
+                setIsLoggingOut(false);
+                console.log("Navigating to welcome screen (/)");
+                router.replace("/");
+              } else {
+                console.log("App will exit on Android - no navigation needed");
+              }
               
-              console.log("Navigating to welcome screen (/)");
               console.log("=== LOGOUT PROCESS COMPLETED SUCCESSFULLY ===");
               console.log("Final timestamp:", new Date().toISOString());
-              router.replace("/");
             } catch (error) {
               console.error("=== LOGOUT ERROR OCCURRED ===");
               console.error("Error details:", error);

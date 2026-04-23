@@ -30,7 +30,7 @@ const SORT_OPTIONS = [
 
 export default function HelpersScreen() {
   const insets = useSafeAreaInsets();
-  const { participants, tasks, functions, user, currentEvent } = useApp();
+  const { participants, tasks, functions, user, currentEvent, deleteParticipant } = useApp();
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("name");
   const [showSortMenu, setShowSortMenu] = useState(false);
@@ -96,6 +96,34 @@ export default function HelpersScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     // Navigate to participant detail view (could be implemented later)
     Alert.alert("Participant Details", "Participant detail view coming soon!");
+  };
+
+  const handleDeleteParticipant = (participantId: string, participantName: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert(
+      "Delete Helper",
+      `Are you sure you want to remove ${participantName} from this event? They will be removed from all assigned tasks.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            if (!currentEvent) return;
+            try {
+              await deleteParticipant(currentEvent.id, participantId);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch (error) {
+              console.error("Error deleting participant:", error);
+              Alert.alert("Error", "Failed to delete helper. Please try again.");
+            }
+          },
+        },
+      ]
+    );
   };
 
   const getInitials = (name: string) => {
@@ -207,6 +235,14 @@ export default function HelpersScreen() {
                         </Text>
                       )}
                     </View>
+                    {user?.role === "manager" && (
+                      <Pressable
+                        style={styles.deleteBtn}
+                        onPress={() => handleDeleteParticipant(stat.participant.id, stat.participant.name)}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={Colors.error} />
+                      </Pressable>
+                    )}
                   </View>
 
                   <View style={styles.taskStats}>
@@ -426,6 +462,14 @@ const styles = StyleSheet.create({
   participantInfo: {
     flex: 1,
     gap: 2,
+  },
+  deleteBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.error + "15",
+    alignItems: "center",
+    justifyContent: "center",
   },
   participantName: {
     fontFamily: "Inter_600SemiBold",

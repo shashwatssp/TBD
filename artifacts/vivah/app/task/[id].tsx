@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as Haptics from "expo-haptics";
+import * as MediaLibrary from "expo-media-library";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
@@ -47,7 +48,7 @@ const PRIORITY_COLORS: Record<TaskPriority, string> = {
 export default function TaskDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { tasks, functions, updateTask, addSubtask, toggleSubtask, addNotification, user, participants, getTask, refreshParticipants, getComments, addComment, updateComment, deleteComment, uploadFileAttachment, getFileAttachments, deleteFileAttachment, canUseFileAttachments, upgradeSubscription } = useApp();
+  const { tasks, functions, updateTask, deleteTask, addSubtask, toggleSubtask, updateSubtask, deleteSubtask, addNotification, user, participants, getTask, refreshParticipants, getComments, addComment, updateComment, deleteComment, uploadFileAttachment, getFileAttachments, deleteFileAttachment, canUseFileAttachments, upgradeSubscription } = useApp();
   const [showAssign, setShowAssign] = useState(false);
   const [selectedParticipants, setSelectedParticipants] = useState<{ id: string; name: string }[]>([]);
   const [showAddSubtask, setShowAddSubtask] = useState(false);
@@ -78,6 +79,12 @@ export default function TaskDetailScreen() {
   const [uploadingFile, setUploadingFile] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
+  const [showEditTask, setShowEditTask] = useState(false);
+  const [editTaskTitle, setEditTaskTitle] = useState("");
+  const [editTaskDescription, setEditTaskDescription] = useState("");
+  const [showEditSubtask, setShowEditSubtask] = useState(false);
+  const [editingSubtask, setEditingSubtask] = useState<{ id: string; title: string } | null>(null);
+  const [editSubtaskTitle, setEditSubtaskTitle] = useState("");
 
   const isManager = user?.role === "manager";
   const task = tasks.find((t) => t.id === id) || fetchedTask;
@@ -116,15 +123,25 @@ export default function TaskDetailScreen() {
 
   // Initialize selectedParticipants when modal opens
   useEffect(() => {
-    if (showAssign && task && task.assignedTo && task.assignedToName) {
-      setSelectedParticipants(
-        task.assignedTo.map((id, index) => ({
-          id,
-          name: task.assignedToName[index] || ''
-        }))
-      );
-    } else if (showAssign) {
-      setSelectedParticipants([]);
+    if (showAssign && task) {
+      try {
+        // Ensure assignedTo and assignedToName are arrays and have the same length
+        const assignedToArray = Array.isArray(task.assignedTo) ? task.assignedTo : [];
+        const assignedToNameArray = Array.isArray(task.assignedToName) ? task.assignedToName : [];
+        
+        if (assignedToArray.length > 0 && assignedToNameArray.length > 0) {
+          const selected = assignedToArray.map((id, index) => ({
+            id: String(id),
+            name: assignedToNameArray[index] || ''
+          }));
+          setSelectedParticipants(selected);
+        } else {
+          setSelectedParticipants([]);
+        }
+      } catch (error) {
+        console.error('Error initializing selected participants:', error);
+        setSelectedParticipants([]);
+      }
     }
   }, [showAssign, task]);
 
@@ -465,16 +482,69 @@ export default function TaskDetailScreen() {
     }
 
     try {
+      console.log('[handlePickFile] Opening document picker on', Platform.OS);
+      
+      // On mobile, we need to request permissions first
+      if (Platform.OS !== 'web') {
+        console.log('[handlePickFile] Requesting media library permissions');
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        console.log('[handlePickFile] Media library permission status:', status);
+        
+        if (status !== 'granted') {
+          Alert.alert(
+            'Permission Required',
+            'This app needs access to your files to upload images and documents. Please grant permission in Settings.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Open Settings',
+                onPress: () => Linking.openSettings()
+              }
+            ]
+          );
+          return;
+        }
+      }
+      
+      // Use expo-document-picker with better mobile support
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/*'],
+        type: Platform.OS === 'web'
+          ? ['application/pdf', 'image/*']
+          : ['image/*', 'application/pdf'],
         copyToCacheDirectory: true,
+        multiple: false,
+      });
+
+      console.log('[handlePickFile] Document picker result:', {
+        canceled: result.canceled,
+        hasAssets: result.assets && result.assets.length > 0,
+        assets: result.assets
       });
 
       if (result.canceled || !result.assets || result.assets.length === 0) {
+        console.log('[handlePickFile] User canceled or no files selected');
         return;
       }
 
       const file = result.assets[0];
+      console.log('[handlePickFile] File selected:', {
+        name: file.name,
+        uri: file.uri,
+        mimeType: file.mimeType,
+        size: file.size
+      });
+      
+      // Validate file size (max 10MB)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size && file.size > maxSize) {
+        Alert.alert(
+          'File Too Large',
+          'Please select a file smaller than 10MB.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
       setUploadingFile(true);
 
       await uploadFileAttachment(
@@ -489,8 +559,41 @@ export default function TaskDetailScreen() {
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await loadAttachments();
-    } catch (error) {
-      console.error('Error picking file:', error);
+    } catch (error: any) {
+      console.error('[handlePickFile] Error picking file:', error);
+      
+      // Handle specific error cases
+      if (error.code === 'E_PICKER_CANCELLED') {
+        console.log('[handlePickFile] User canceled file picker');
+        return;
+      }
+      
+      // Handle permission-related errors
+      if (error.code === 'E_PERMISSION_MISSING' || error.message?.includes('permission')) {
+        Alert.alert(
+          'Permission Required',
+          'This app needs access to your files to upload images and documents. Please grant permission in Settings.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => Linking.openSettings()
+            }
+          ]
+        );
+        return;
+      }
+      
+      // Handle network errors
+      if (error.message?.includes('network') || error.message?.includes('Network')) {
+        Alert.alert(
+          'Network Error',
+          'Please check your internet connection and try again.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
       Alert.alert('Error', 'Failed to upload file. Please try again.');
     } finally {
       setUploadingFile(false);
@@ -554,6 +657,103 @@ export default function TaskDetailScreen() {
     return 'document-outline';
   };
 
+  const handleEditTask = async () => {
+    if (!editTaskTitle.trim() || saving) return;
+    setSaving(true);
+    try {
+      await updateTask(task.id, {
+        title: editTaskTitle.trim(),
+        description: editTaskDescription.trim() || undefined,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowEditTask(false);
+      await handleRefresh();
+    } catch (error) {
+      console.error("Error updating task:", error);
+      Alert.alert("Error", "Failed to update task. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteTask = async () => {
+    Alert.alert(
+      "Delete Task",
+      "Are you sure you want to delete this task? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteTask(task.id);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              router.back();
+            } catch (error) {
+              console.error("Error deleting task:", error);
+              Alert.alert("Error", "Failed to delete task. Please try again.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const openEditTask = () => {
+    setEditTaskTitle(task.title);
+    setEditTaskDescription(task.description || "");
+    setShowEditTask(true);
+  };
+
+  const handleEditSubtask = async () => {
+    if (!editSubtaskTitle.trim() || !editingSubtask || saving) return;
+    setSaving(true);
+    try {
+      await updateSubtask(editingSubtask.id, { title: editSubtaskTitle.trim() });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowEditSubtask(false);
+      setEditingSubtask(null);
+      setEditSubtaskTitle("");
+      await handleRefresh();
+    } catch (error) {
+      console.error("Error updating subtask:", error);
+      Alert.alert("Error", "Failed to update subtask. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteSubtask = async (subtaskId: string) => {
+    Alert.alert(
+      "Delete Subtask",
+      "Are you sure you want to delete this subtask?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteSubtask(subtaskId);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              await handleRefresh();
+            } catch (error) {
+              console.error("Error deleting subtask:", error);
+              Alert.alert("Error", "Failed to delete subtask. Please try again.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const openEditSubtask = (subtask: { id: string; title: string }) => {
+    setEditingSubtask(subtask);
+    setEditSubtaskTitle(subtask.title);
+    setShowEditSubtask(true);
+  };
+
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -580,7 +780,14 @@ export default function TaskDetailScreen() {
             <Text style={[styles.fnBadgeText, { color: fn.color }]}>{fn.name}</Text>
           </View>
         </View>
-        <Text style={styles.taskTitle}>{task.title}</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.taskTitle}>{task.title}</Text>
+          {isManager && (
+            <Pressable onPress={openEditTask}>
+              <Ionicons name="pencil-outline" size={20} color={Colors.primary} />
+            </Pressable>
+          )}
+        </View>
       </View>
 
       <KeyboardAwareScrollViewCompat
@@ -707,12 +914,30 @@ export default function TaskDetailScreen() {
                   <Text style={[styles.subtaskText, st.completed && styles.subtaskDone]}>
                     {st.title}
                   </Text>
-                  <Pressable
-                    style={styles.subtaskCommentBtn}
-                    onPress={() => handleOpenSubtaskComments(st.id)}
-                  >
-                    <Ionicons name="chatbubble-outline" size={16} color={Colors.textMuted} />
-                  </Pressable>
+                  <View style={styles.subtaskActions}>
+                    {isManager && (
+                      <Pressable
+                        style={styles.subtaskActionBtn}
+                        onPress={() => openEditSubtask(st)}
+                      >
+                        <Ionicons name="pencil-outline" size={14} color={Colors.textMuted} />
+                      </Pressable>
+                    )}
+                    {isManager && (
+                      <Pressable
+                        style={styles.subtaskActionBtn}
+                        onPress={() => handleDeleteSubtask(st.id)}
+                      >
+                        <Ionicons name="trash-outline" size={14} color={Colors.error} />
+                      </Pressable>
+                    )}
+                    <Pressable
+                      style={styles.subtaskCommentBtn}
+                      onPress={() => handleOpenSubtaskComments(st.id)}
+                    >
+                      <Ionicons name="chatbubble-outline" size={16} color={Colors.textMuted} />
+                    </Pressable>
+                  </View>
                 </View>
               </Animated.View>
             ))
@@ -738,33 +963,42 @@ export default function TaskDetailScreen() {
             </View>
           ) : (
             <View style={styles.commentsList}>
-              {comments.map((comment) => (
-                <View key={comment.id} style={styles.commentItem}>
-                  <View style={styles.commentHeader}>
-                    <View style={styles.commentAvatar}>
-                      <Text style={styles.commentAvatarText}>{comment.userName.charAt(0).toUpperCase()}</Text>
+              {comments.map((comment) => {
+                const isMyComment = comment.userId === user?.id;
+                return (
+                  <View
+                    key={comment.id}
+                    style={[
+                      styles.commentItem,
+                      isMyComment ? styles.myComment : styles.otherComment
+                    ]}
+                  >
+                    <View style={styles.commentHeader}>
+                      <View style={styles.commentAvatar}>
+                        <Text style={styles.commentAvatarText}>{comment.userName.charAt(0).toUpperCase()}</Text>
+                      </View>
+                      <View style={styles.commentInfo}>
+                        <Text style={styles.commentAuthor}>{comment.userName}</Text>
+                        <Text style={styles.commentDate}>
+                          {new Date(comment.createdAt.toDate()).toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </Text>
+                      </View>
+                      {isMyComment && (
+                        <Pressable onPress={() => setShowCommentOptions(comment)}>
+                          <Ionicons name="ellipsis-vertical" size={18} color={Colors.textMuted} />
+                        </Pressable>
+                      )}
                     </View>
-                    <View style={styles.commentInfo}>
-                      <Text style={styles.commentAuthor}>{comment.userName}</Text>
-                      <Text style={styles.commentDate}>
-                        {new Date(comment.createdAt.toDate()).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </Text>
-                    </View>
-                    {comment.userId === user?.id && (
-                      <Pressable onPress={() => setShowCommentOptions(comment)}>
-                        <Ionicons name="ellipsis-vertical" size={18} color={Colors.textMuted} />
-                      </Pressable>
-                    )}
+                    <Text style={styles.commentText}>{comment.text}</Text>
                   </View>
-                  <Text style={styles.commentText}>{comment.text}</Text>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
         </View>
@@ -822,8 +1056,17 @@ export default function TaskDetailScreen() {
               style={({ pressed }) => [styles.actionBtn, { opacity: pressed ? 0.8 : 1 }]}
               onPress={() => setShowAssign(true)}
             >
-              <Ionicons name="person-add-outline" size={18} color={Colors.primary} />
+              <Ionicons name="person-add-outline" size={16} color={Colors.primary} />
               <Text style={styles.actionBtnText}>Reassign</Text>
+            </Pressable>
+          )}
+          {isManager && (
+            <Pressable
+              style={({ pressed }) => [styles.deleteTaskBtn, { opacity: pressed ? 0.8 : 1 }]}
+              onPress={handleDeleteTask}
+            >
+              <Ionicons name="trash-outline" size={16} color={Colors.error} />
+              <Text style={[styles.actionBtnText, { color: Colors.error }]}>Delete Task</Text>
             </Pressable>
           )}
           {task.status !== "completed" && (
@@ -836,7 +1079,7 @@ export default function TaskDetailScreen() {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <>
-                  <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
+                  <Ionicons name="checkmark-circle-outline" size={16} color="#FFFFFF" />
                   <Text style={styles.completeBtnText}>Mark Complete</Text>
                 </>
               )}
@@ -955,30 +1198,37 @@ export default function TaskDetailScreen() {
       <Modal visible={showAddSubtask} transparent animationType="slide">
         <Pressable style={styles.overlay} onPress={() => setShowAddSubtask(false)}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+            style={{ flex: 1 }}
           >
             <Pressable style={[styles.statusSheet, { paddingBottom: insets.bottom + 20 }]}>
               <View style={styles.grabber} />
               <Text style={styles.sheetTitle}>Add Subtask</Text>
-              <TextInput
-                style={styles.sheetInput}
-                placeholder="e.g. Compare pricing"
-                value={newSubtask}
-                onChangeText={setNewSubtask}
-                placeholderTextColor={Colors.textMuted}
-                autoFocus
-                returnKeyType="done"
-                onSubmitEditing={handleAddSubtask}
-                underlineColorAndroid="transparent"
-              />
-            <Pressable
-              style={[styles.sheetBtn, (!newSubtask.trim() || saving) && { opacity: 0.4 }]}
-              onPress={handleAddSubtask}
-              disabled={!newSubtask.trim() || saving}
-            >
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Add</Text>}
-            </Pressable>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 20 }}
+              >
+                <TextInput
+                  style={styles.sheetInput}
+                  placeholder="e.g. Compare pricing"
+                  value={newSubtask}
+                  onChangeText={setNewSubtask}
+                  placeholderTextColor={Colors.textMuted}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={handleAddSubtask}
+                  underlineColorAndroid="transparent"
+                />
+                <Pressable
+                  style={[styles.sheetBtn, (!newSubtask.trim() || saving) && { opacity: 0.4 }]}
+                  onPress={handleAddSubtask}
+                  disabled={!newSubtask.trim() || saving}
+                >
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Add</Text>}
+                </Pressable>
+              </ScrollView>
             </Pressable>
           </KeyboardAvoidingView>
         </Pressable>
@@ -987,32 +1237,39 @@ export default function TaskDetailScreen() {
       <Modal visible={showEditBudget} transparent animationType="slide">
         <Pressable style={styles.overlay} onPress={() => setShowEditBudget(false)}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+            style={{ flex: 1 }}
           >
             <Pressable style={[styles.statusSheet, { paddingBottom: insets.bottom + 20 }]}>
               <View style={styles.grabber} />
               <Text style={styles.sheetTitle}>Edit Budget</Text>
-              <View style={styles.budgetRow}>
-                <Text style={styles.currencySymbol}>₹</Text>
-                <TextInput
-                  style={styles.budgetInput}
-                  placeholder="0"
-                  value={editBudget}
-                  onChangeText={setEditBudget}
-                  placeholderTextColor={Colors.textMuted}
-                  keyboardType="numeric"
-                  autoFocus
-                  underlineColorAndroid="transparent"
-                />
-            </View>
-            <Pressable
-              style={[styles.sheetBtn, (!editBudget.trim() || saving) && { opacity: 0.4 }]}
-              onPress={handleUpdateBudget}
-              disabled={!editBudget.trim() || saving}
-            >
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Save</Text>}
-            </Pressable>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 20 }}
+              >
+                <View style={styles.budgetRow}>
+                  <Text style={styles.currencySymbol}>₹</Text>
+                  <TextInput
+                    style={styles.budgetInput}
+                    placeholder="0"
+                    value={editBudget}
+                    onChangeText={setEditBudget}
+                    placeholderTextColor={Colors.textMuted}
+                    keyboardType="numeric"
+                    autoFocus
+                    underlineColorAndroid="transparent"
+                  />
+                </View>
+                <Pressable
+                  style={[styles.sheetBtn, (!editBudget.trim() || saving) && { opacity: 0.4 }]}
+                  onPress={handleUpdateBudget}
+                  disabled={!editBudget.trim() || saving}
+                >
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Save</Text>}
+                </Pressable>
+              </ScrollView>
             </Pressable>
           </KeyboardAvoidingView>
         </Pressable>
@@ -1021,35 +1278,42 @@ export default function TaskDetailScreen() {
       <Modal visible={showEditDueDate} transparent animationType="slide">
         <Pressable style={styles.overlay} onPress={() => setShowEditDueDate(false)}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+            style={{ flex: 1 }}
           >
             <Pressable style={[styles.statusSheet, { paddingBottom: insets.bottom + 20 }]}>
               <View style={styles.grabber} />
               <Text style={styles.sheetTitle}>Edit Due Date</Text>
-              <Pressable
-                style={styles.dateRow}
-                onPress={() => setShowDatePicker(true)}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 20 }}
               >
-                <Ionicons name="calendar-outline" size={18} color={Colors.textMuted} />
-                <Text style={styles.dateText}>
-                  {editDueDate
-                    ? editDueDate.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
-                    : "Select due date"}
-                </Text>
-                {editDueDate && (
-                  <Pressable onPress={() => setEditDueDate(null)}>
-                    <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
-                  </Pressable>
-                )}
-              </Pressable>
-              <Pressable
-                style={[styles.sheetBtn, saving && { opacity: 0.4 }]}
-                onPress={handleUpdateDueDate}
-                disabled={saving}
-              >
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Save</Text>}
-              </Pressable>
+                <Pressable
+                  style={styles.dateRow}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Ionicons name="calendar-outline" size={18} color={Colors.textMuted} />
+                  <Text style={styles.dateText}>
+                    {editDueDate
+                      ? editDueDate.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+                      : "Select due date"}
+                  </Text>
+                  {editDueDate && (
+                    <Pressable onPress={() => setEditDueDate(null)}>
+                      <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+                    </Pressable>
+                  )}
+                </Pressable>
+                <Pressable
+                  style={[styles.sheetBtn, saving && { opacity: 0.4 }]}
+                  onPress={handleUpdateDueDate}
+                  disabled={saving}
+                >
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Save</Text>}
+                </Pressable>
+              </ScrollView>
             </Pressable>
           </KeyboardAvoidingView>
         </Pressable>
@@ -1074,31 +1338,38 @@ export default function TaskDetailScreen() {
       <Modal visible={showAddComment} transparent animationType="slide">
         <Pressable style={styles.overlay} onPress={() => setShowAddComment(false)}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+            style={{ flex: 1 }}
           >
             <Pressable style={[styles.statusSheet, { paddingBottom: insets.bottom + 20 }]}>
               <View style={styles.grabber} />
               <Text style={styles.sheetTitle}>Add Comment</Text>
-              <TextInput
-                style={[styles.sheetInput, styles.commentInput]}
-                placeholder="Write your comment..."
-                value={newComment}
-                onChangeText={setNewComment}
-                placeholderTextColor={Colors.textMuted}
-                autoFocus
-                multiline
-                returnKeyType="done"
-                onSubmitEditing={handleAddComment}
-                underlineColorAndroid="transparent"
-              />
-              <Pressable
-                style={[styles.sheetBtn, (!newComment.trim() || saving) && { opacity: 0.4 }]}
-                onPress={handleAddComment}
-                disabled={!newComment.trim() || saving}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 20 }}
               >
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Post</Text>}
-              </Pressable>
+                <TextInput
+                  style={[styles.sheetInput, styles.commentInput]}
+                  placeholder="Write your comment..."
+                  value={newComment}
+                  onChangeText={setNewComment}
+                  placeholderTextColor={Colors.textMuted}
+                  autoFocus
+                  multiline
+                  returnKeyType="done"
+                  onSubmitEditing={handleAddComment}
+                  underlineColorAndroid="transparent"
+                />
+                <Pressable
+                  style={[styles.sheetBtn, (!newComment.trim() || saving) && { opacity: 0.4 }]}
+                  onPress={handleAddComment}
+                  disabled={!newComment.trim() || saving}
+                >
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Post</Text>}
+                </Pressable>
+              </ScrollView>
             </Pressable>
           </KeyboardAvoidingView>
         </Pressable>
@@ -1107,31 +1378,38 @@ export default function TaskDetailScreen() {
       <Modal visible={!!editingComment} transparent animationType="slide">
         <Pressable style={styles.overlay} onPress={() => setEditingComment(null)}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+            style={{ flex: 1 }}
           >
             <Pressable style={[styles.statusSheet, { paddingBottom: insets.bottom + 20 }]}>
               <View style={styles.grabber} />
               <Text style={styles.sheetTitle}>Edit Comment</Text>
-              <TextInput
-                style={[styles.sheetInput, styles.commentInput]}
-                placeholder="Edit your comment..."
-                value={newComment}
-                onChangeText={setNewComment}
-                placeholderTextColor={Colors.textMuted}
-                autoFocus
-                multiline
-                returnKeyType="done"
-                onSubmitEditing={handleUpdateComment}
-                underlineColorAndroid="transparent"
-              />
-              <Pressable
-                style={[styles.sheetBtn, (!newComment.trim() || saving) && { opacity: 0.4 }]}
-                onPress={handleUpdateComment}
-                disabled={!newComment.trim() || saving}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 20 }}
               >
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Update</Text>}
-              </Pressable>
+                <TextInput
+                  style={[styles.sheetInput, styles.commentInput]}
+                  placeholder="Edit your comment..."
+                  value={newComment}
+                  onChangeText={setNewComment}
+                  placeholderTextColor={Colors.textMuted}
+                  autoFocus
+                  multiline
+                  returnKeyType="done"
+                  onSubmitEditing={handleUpdateComment}
+                  underlineColorAndroid="transparent"
+                />
+                <Pressable
+                  style={[styles.sheetBtn, (!newComment.trim() || saving) && { opacity: 0.4 }]}
+                  onPress={handleUpdateComment}
+                  disabled={!newComment.trim() || saving}
+                >
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Update</Text>}
+                </Pressable>
+              </ScrollView>
             </Pressable>
           </KeyboardAvoidingView>
         </Pressable>
@@ -1165,8 +1443,8 @@ export default function TaskDetailScreen() {
       <Modal visible={!!showSubtaskComments} transparent animationType="slide">
         <Pressable style={styles.overlay} onPress={() => setShowSubtaskComments(null)}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
           >
             <Pressable style={[styles.statusSheet, styles.subtaskCommentsModal, { paddingBottom: insets.bottom + 20 }]}>
               <View style={styles.grabber} />
@@ -1227,31 +1505,38 @@ export default function TaskDetailScreen() {
       <Modal visible={showAddSubtaskComment} transparent animationType="slide">
         <Pressable style={styles.overlay} onPress={() => setShowAddSubtaskComment(false)}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+            style={{ flex: 1 }}
           >
             <Pressable style={[styles.statusSheet, { paddingBottom: insets.bottom + 20 }]}>
               <View style={styles.grabber} />
               <Text style={styles.sheetTitle}>Add Comment</Text>
-              <TextInput
-                style={[styles.sheetInput, styles.commentInput]}
-                placeholder="Write your comment..."
-                value={newSubtaskComment}
-                onChangeText={setNewSubtaskComment}
-                placeholderTextColor={Colors.textMuted}
-                autoFocus
-                multiline
-                returnKeyType="done"
-                onSubmitEditing={handleAddSubtaskComment}
-                underlineColorAndroid="transparent"
-              />
-              <Pressable
-                style={[styles.sheetBtn, (!newSubtaskComment.trim() || saving) && { opacity: 0.4 }]}
-                onPress={handleAddSubtaskComment}
-                disabled={!newSubtaskComment.trim() || saving}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 20 }}
               >
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Post</Text>}
-              </Pressable>
+                <TextInput
+                  style={[styles.sheetInput, styles.commentInput]}
+                  placeholder="Write your comment..."
+                  value={newSubtaskComment}
+                  onChangeText={setNewSubtaskComment}
+                  placeholderTextColor={Colors.textMuted}
+                  autoFocus
+                  multiline
+                  returnKeyType="done"
+                  onSubmitEditing={handleAddSubtaskComment}
+                  underlineColorAndroid="transparent"
+                />
+                <Pressable
+                  style={[styles.sheetBtn, (!newSubtaskComment.trim() || saving) && { opacity: 0.4 }]}
+                  onPress={handleAddSubtaskComment}
+                  disabled={!newSubtaskComment.trim() || saving}
+                >
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Post</Text>}
+                </Pressable>
+              </ScrollView>
             </Pressable>
           </KeyboardAvoidingView>
         </Pressable>
@@ -1260,31 +1545,38 @@ export default function TaskDetailScreen() {
       <Modal visible={!!editingSubtaskComment} transparent animationType="slide">
         <Pressable style={styles.overlay} onPress={() => setEditingSubtaskComment(null)}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+            style={{ flex: 1 }}
           >
             <Pressable style={[styles.statusSheet, { paddingBottom: insets.bottom + 20 }]}>
               <View style={styles.grabber} />
               <Text style={styles.sheetTitle}>Edit Comment</Text>
-              <TextInput
-                style={[styles.sheetInput, styles.commentInput]}
-                placeholder="Edit your comment..."
-                value={newSubtaskComment}
-                onChangeText={setNewSubtaskComment}
-                placeholderTextColor={Colors.textMuted}
-                autoFocus
-                multiline
-                returnKeyType="done"
-                onSubmitEditing={handleUpdateSubtaskComment}
-                underlineColorAndroid="transparent"
-              />
-              <Pressable
-                style={[styles.sheetBtn, (!newSubtaskComment.trim() || saving) && { opacity: 0.4 }]}
-                onPress={handleUpdateSubtaskComment}
-                disabled={!newSubtaskComment.trim() || saving}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 20 }}
               >
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Update</Text>}
-              </Pressable>
+                <TextInput
+                  style={[styles.sheetInput, styles.commentInput]}
+                  placeholder="Edit your comment..."
+                  value={newSubtaskComment}
+                  onChangeText={setNewSubtaskComment}
+                  placeholderTextColor={Colors.textMuted}
+                  autoFocus
+                  multiline
+                  returnKeyType="done"
+                  onSubmitEditing={handleUpdateSubtaskComment}
+                  underlineColorAndroid="transparent"
+                />
+                <Pressable
+                  style={[styles.sheetBtn, (!newSubtaskComment.trim() || saving) && { opacity: 0.4 }]}
+                  onPress={handleUpdateSubtaskComment}
+                  disabled={!newSubtaskComment.trim() || saving}
+                >
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Update</Text>}
+                </Pressable>
+              </ScrollView>
             </Pressable>
           </KeyboardAvoidingView>
         </Pressable>
@@ -1400,6 +1692,98 @@ export default function TaskDetailScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Edit Task Modal */}
+      <Modal visible={showEditTask} transparent animationType="slide">
+        <Pressable style={styles.overlay} onPress={() => setShowEditTask(false)}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+            style={{ flex: 1 }}
+          >
+            <Pressable style={[styles.statusSheet, { paddingBottom: insets.bottom + 20 }]}>
+              <View style={styles.grabber} />
+              <Text style={styles.sheetTitle}>Edit Task</Text>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 20 }}
+              >
+                <Text style={styles.inputLabel}>Task Title</Text>
+                <TextInput
+                  style={styles.sheetInput}
+                  placeholder="e.g. Book venue"
+                  value={editTaskTitle}
+                  onChangeText={setEditTaskTitle}
+                  placeholderTextColor={Colors.textMuted}
+                  autoFocus
+                  returnKeyType="next"
+                  underlineColorAndroid="transparent"
+                />
+                <Text style={styles.inputLabel}>Description (Optional)</Text>
+                <TextInput
+                  style={[styles.sheetInput, styles.commentInput]}
+                  placeholder="Add details about this task..."
+                  value={editTaskDescription}
+                  onChangeText={setEditTaskDescription}
+                  placeholderTextColor={Colors.textMuted}
+                  multiline
+                  returnKeyType="done"
+                  onSubmitEditing={handleEditTask}
+                  underlineColorAndroid="transparent"
+                />
+                <Pressable
+                  style={[styles.sheetBtn, (!editTaskTitle.trim() || saving) && { opacity: 0.4 }]}
+                  onPress={handleEditTask}
+                  disabled={!editTaskTitle.trim() || saving}
+                >
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Save Changes</Text>}
+                </Pressable>
+              </ScrollView>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+
+      {/* Edit Subtask Modal */}
+      <Modal visible={showEditSubtask} transparent animationType="slide">
+        <Pressable style={styles.overlay} onPress={() => setShowEditSubtask(false)}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+            style={{ flex: 1 }}
+          >
+            <Pressable style={[styles.statusSheet, { paddingBottom: insets.bottom + 20 }]}>
+              <View style={styles.grabber} />
+              <Text style={styles.sheetTitle}>Edit Subtask</Text>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 20 }}
+              >
+                <TextInput
+                  style={styles.sheetInput}
+                  placeholder="e.g. Compare pricing"
+                  value={editSubtaskTitle}
+                  onChangeText={setEditSubtaskTitle}
+                  placeholderTextColor={Colors.textMuted}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={handleEditSubtask}
+                  underlineColorAndroid="transparent"
+                />
+                <Pressable
+                  style={[styles.sheetBtn, (!editSubtaskTitle.trim() || saving) && { opacity: 0.4 }]}
+                  onPress={handleEditSubtask}
+                  disabled={!editSubtaskTitle.trim() || saving}
+                >
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnText}>Save Changes</Text>}
+                </Pressable>
+              </ScrollView>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -1500,6 +1884,19 @@ const styles = StyleSheet.create({
   checkboxDone: { backgroundColor: Colors.success, borderColor: Colors.success },
   subtaskText: { flex: 1, fontFamily: "Inter_400Regular", fontSize: 14, color: Colors.text, lineHeight: 20 },
   subtaskDone: { color: Colors.textMuted, textDecorationLine: "line-through" },
+  subtaskActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  subtaskActionBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.background,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   subtaskCommentBtn: {
     width: 32,
     height: 32,
@@ -1514,24 +1911,42 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
     backgroundColor: Colors.primary + "15",
     borderRadius: 14,
-    paddingVertical: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     borderWidth: 1,
     borderColor: Colors.primary + "30",
+    minHeight: 48,
   },
-  actionBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: Colors.primary },
+  actionBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: Colors.primary },
   completeBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
     backgroundColor: Colors.success,
     borderRadius: 14,
-    paddingVertical: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    minHeight: 48,
   },
-  completeBtnText: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#FFFFFF" },
+  completeBtnText: { fontFamily: "Inter_700Bold", fontSize: 13, color: "#FFFFFF" },
+  deleteTaskBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: Colors.error + "15",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: Colors.error + "30",
+    minHeight: 48,
+  },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   statusSheet: {
     backgroundColor: Colors.surface,
@@ -1598,6 +2013,13 @@ const styles = StyleSheet.create({
   },
   participantChipText: { fontFamily: "Inter_500Medium", fontSize: 13, color: Colors.textSecondary },
   maxAssigneesText: { fontFamily: "Inter_400Regular", fontSize: 11, color: Colors.warning, marginTop: 4 },
+  inputLabel: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13,
+    color: Colors.text,
+    marginBottom: 8,
+    marginTop: 4,
+  },
   sheetInput: {
     fontFamily: "Inter_400Regular",
     fontSize: 15,
@@ -1658,6 +2080,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     gap: 8,
+  },
+  myComment: {
+    backgroundColor: Colors.primary + "10",
+    alignSelf: "flex-end",
+    maxWidth: "85%",
+  },
+  otherComment: {
+    backgroundColor: Colors.background,
+    alignSelf: "flex-start",
+    maxWidth: "85%",
   },
   commentHeader: {
     flexDirection: "row",

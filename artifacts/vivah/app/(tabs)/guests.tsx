@@ -389,14 +389,11 @@ export default function GuestsScreen() {
       <Modal visible={showAddGuest} transparent animationType="slide">
         <Pressable style={styles.overlay} onPress={() => setShowAddGuest(false)}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "padding"}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
             keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+            style={{ flex: 1, justifyContent: "flex-end" }}
           >
-            <KeyboardAwareScrollViewCompat
-              style={styles.sheet}
-              contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-              keyboardShouldPersistTaps="handled"
-            >
+            <Pressable style={styles.sheet}>
             <View style={styles.grabber} />
             <Text style={styles.sheetTitle}>Add Guest</Text>
 
@@ -500,23 +497,20 @@ export default function GuestsScreen() {
                 <Text style={styles.sheetBtnText}>Add Guest</Text>
               )}
             </Pressable>
-          </KeyboardAwareScrollViewCompat>
+          </Pressable>
         </KeyboardAvoidingView>
       </Pressable>
     </Modal>
 
-      {/* Add Family Modal */}
-      <Modal visible={showAddFamily} transparent animationType="slide">
-        <Pressable style={styles.overlay} onPress={() => setShowAddFamily(false)}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "padding"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
-          >
-            <KeyboardAwareScrollViewCompat
-              style={styles.sheet}
-              contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-              keyboardShouldPersistTaps="handled"
-            >
+    {/* Add Family Modal */}
+    <Modal visible={showAddFamily} transparent animationType="slide">
+      <Pressable style={styles.overlay} onPress={() => setShowAddFamily(false)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+          style={{ flex: 1, justifyContent: "flex-end" }}
+        >
+          <Pressable style={styles.sheet}>
               <View style={styles.grabber} />
               <Text style={styles.sheetTitle}>Add Family</Text>
 
@@ -556,7 +550,7 @@ export default function GuestsScreen() {
                   <Text style={styles.sheetBtnText}>Add Family</Text>
                 )}
               </Pressable>
-            </KeyboardAwareScrollViewCompat>
+            </Pressable>
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>

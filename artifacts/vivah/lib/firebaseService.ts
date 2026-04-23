@@ -829,6 +829,39 @@ export const getParticipants = async (eventId: string): Promise<FirebaseUser[]> 
   return result;
 };
 
+export const deleteParticipant = async (eventId: string, userId: string): Promise<void> => {
+  console.log("[firebaseService] deleteParticipant called", { eventId, userId });
+  
+  // Delete participant record
+  const participantsRef = collection(db, 'participants');
+  const q = query(participantsRef, where('eventId', '==', eventId), where('userId', '==', userId));
+  const querySnapshot = await getDocs(q);
+  
+  const deletePromises = querySnapshot.docs.map(doc => deleteDoc(doc.ref));
+  await Promise.all(deletePromises);
+  
+  console.log("[firebaseService] Participant record deleted successfully");
+  
+  // Remove participant from all tasks they're assigned to
+  const tasksRef = collection(db, 'tasks');
+  const tasksQuery = query(tasksRef, where('assignedTo', 'array-contains', userId));
+  const tasksSnapshot = await getDocs(tasksQuery);
+  
+  const updatePromises = tasksSnapshot.docs.map(async (doc) => {
+    const taskData = doc.data() as FirebaseTask;
+    const updatedAssignedTo = taskData.assignedTo.filter(id => id !== userId);
+    const updatedAssignedToName = taskData.assignedToName.filter((_, index) => taskData.assignedTo[index] !== userId);
+    
+    await updateDoc(doc.ref, {
+      assignedTo: updatedAssignedTo,
+      assignedToName: updatedAssignedToName
+    });
+  });
+  
+  await Promise.all(updatePromises);
+  console.log("[firebaseService] Participant removed from all assigned tasks");
+};
+
 // Function Operations
 export const getFunctions = async (eventId: string): Promise<FirebaseFunction[]> => {
   const functionsRef = collection(db, 'functions');
@@ -871,6 +904,50 @@ export const createFunction = async (functionData: {
     ...newFunction,
     createdAt: Timestamp.now()
   } as FirebaseFunction;
+};
+
+export const updateFunction = async (functionId: string, updates: Partial<FirebaseFunction>): Promise<FirebaseFunction> => {
+  const functionRef = doc(db, 'functions', functionId);
+  await updateDoc(functionRef, updates);
+  
+  const functionDoc = await getDoc(functionRef);
+  if (!functionDoc.exists()) {
+    throw new Error('Function not found');
+  }
+  
+  return {
+    ...functionDoc.data(),
+    id: functionDoc.id
+  } as FirebaseFunction;
+};
+
+export const deleteFunction = async (functionId: string): Promise<void> => {
+  const functionRef = doc(db, 'functions', functionId);
+  await deleteDoc(functionRef);
+  
+  // Also delete all tasks in this function
+  const tasksRef = collection(db, 'tasks');
+  const q = query(tasksRef, where('functionId', '==', functionId));
+  const querySnapshot = await getDocs(q);
+  
+  const deletePromises = querySnapshot.docs.map(async (doc) => {
+    // Delete subtasks for this task
+    const subtasksRef = collection(db, 'subtasks');
+    const subtasksQuery = query(subtasksRef, where('taskId', '==', doc.id));
+    const subtasksSnapshot = await getDocs(subtasksQuery);
+    await Promise.all(subtasksSnapshot.docs.map(subtaskDoc => deleteDoc(subtaskDoc.ref)));
+    
+    // Delete attachments for this task
+    const attachmentsRef = collection(db, 'attachments');
+    const attachmentsQuery = query(attachmentsRef, where('taskId', '==', doc.id));
+    const attachmentsSnapshot = await getDocs(attachmentsQuery);
+    await Promise.all(attachmentsSnapshot.docs.map(attachmentDoc => deleteDoc(attachmentDoc.ref)));
+    
+    // Delete the task
+    await deleteDoc(doc.ref);
+  });
+  
+  await Promise.all(deletePromises);
 };
 
 // Task Operations
@@ -1357,6 +1434,47 @@ export const toggleSubtask = async (subtaskId: string, completed: boolean): Prom
   } as FirebaseSubtask;
 };
 
+export const updateSubtask = async (subtaskId: string, updates: { title: string }): Promise<FirebaseSubtask> => {
+  const subtaskRef = doc(db, 'subtasks', subtaskId);
+  await updateDoc(subtaskRef, updates);
+  
+  const subtaskDoc = await getDoc(subtaskRef);
+  if (!subtaskDoc.exists()) {
+    throw new Error('Subtask not found');
+  }
+  
+  return {
+    ...subtaskDoc.data(),
+    id: subtaskDoc.id
+  } as FirebaseSubtask;
+};
+
+export const deleteSubtask = async (subtaskId: string): Promise<void> => {
+  const subtaskRef = doc(db, 'subtasks', subtaskId);
+  await deleteDoc(subtaskRef);
+};
+
+export const deleteTask = async (taskId: string): Promise<void> => {
+  const taskRef = doc(db, 'tasks', taskId);
+  await deleteDoc(taskRef);
+  
+  // Also delete all subtasks for this task
+  const subtasksRef = collection(db, 'subtasks');
+  const subtasksQuery = query(subtasksRef, where('taskId', '==', taskId));
+  const subtasksSnapshot = await getDocs(subtasksQuery);
+  
+  const deletePromises = subtasksSnapshot.docs.map(doc => deleteDoc(doc.ref));
+  await Promise.all(deletePromises);
+  
+  // Also delete all attachments for this task
+  const attachmentsRef = collection(db, 'attachments');
+  const attachmentsQuery = query(attachmentsRef, where('taskId', '==', taskId));
+  const attachmentsSnapshot = await getDocs(attachmentsQuery);
+  
+  const attachmentDeletePromises = attachmentsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+  await Promise.all(attachmentDeletePromises);
+};
+
 // Notification Operations
 export const getNotifications = async (userId: string): Promise<FirebaseNotification[]> => {
   const notificationsRef = collection(db, 'notifications');
@@ -1503,31 +1621,50 @@ const base64ToBlob = (base64: string, mimeType: string): Blob => {
   return new Blob([bytes], { type: mimeType });
 };
 
-// Helper function to read file as blob (handles Android content:// URIs)
+// Helper function to read file as blob (handles Android content:// and file:// URIs)
 const readFileAsBlob = async (uri: string, mimeType: string): Promise<Blob> => {
   console.log("[firebaseService] readFileAsBlob called", { uri, mimeType, platform: Platform.OS });
   
-  // On Android, content:// URIs need to be read using FileSystem
-  if (Platform.OS === 'android' && uri.startsWith('content://')) {
-    console.log("[firebaseService] Reading Android content:// URI using FileSystem");
+  // On Android, handle both content:// and file:// URIs using FileSystem
+  if (Platform.OS === 'android' && (uri.startsWith('content://') || uri.startsWith('file://'))) {
+    console.log("[firebaseService] Reading Android URI using FileSystem", { uriType: uri.startsWith('content://') ? 'content://' : 'file://' });
     try {
       // Read file as base64 string
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: 'base64',
       });
-      console.log("[firebaseService] File read successfully from content:// URI", {
+      console.log("[firebaseService] File read successfully from Android URI", {
         base64Length: base64.length,
       });
       // Convert base64 to blob
       return base64ToBlob(base64, mimeType);
     } catch (error) {
-      console.error("[firebaseService] Error reading content:// URI:", error);
-      throw new Error(`Failed to read file from content:// URI: ${error}`);
+      console.error("[firebaseService] Error reading Android URI:", error);
+      throw new Error(`Failed to read file from Android URI: ${error}`);
     }
   }
   
-  // On iOS/web, use fetch for file:// and http:// URIs
-  console.log("[firebaseService] Reading file using fetch");
+  // On iOS, handle both content:// and file:// URIs using FileSystem
+  if (Platform.OS === 'ios' && (uri.startsWith('content://') || uri.startsWith('file://'))) {
+    console.log("[firebaseService] Reading iOS URI using FileSystem", { uriType: uri.startsWith('content://') ? 'content://' : 'file://' });
+    try {
+      // Read file as base64 string
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: 'base64',
+      });
+      console.log("[firebaseService] File read successfully from iOS URI", {
+        base64Length: base64.length,
+      });
+      // Convert base64 to blob
+      return base64ToBlob(base64, mimeType);
+    } catch (error) {
+      console.error("[firebaseService] Error reading iOS URI:", error);
+      throw new Error(`Failed to read file from iOS URI: ${error}`);
+    }
+  }
+  
+  // On web, use fetch for http:// and https:// URIs
+  console.log("[firebaseService] Reading file using fetch (web)");
   const response = await fetch(uri);
   console.log("[firebaseService] File fetch response status:", response.status);
   

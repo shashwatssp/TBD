@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -48,10 +49,11 @@ const SORT_OPTIONS = [
 export default function TasksByStatusScreen() {
   const insets = useSafeAreaInsets();
   const { status } = useLocalSearchParams<{ status: TaskStatus }>();
-  const { tasks, functions, user, currentEvent, participants } = useApp();
+  const { tasks, functions, user, currentEvent, participants, refreshTasks } = useApp();
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("dueDate");
   const [showSortMenu, setShowSortMenu] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const isManager = user?.role === "manager";
 
@@ -114,6 +116,17 @@ export default function TasksByStatusScreen() {
       return "Due tomorrow";
     } else {
       return `Due in ${daysDiff} days`;
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshTasks();
+    } catch (error) {
+      console.error("Error refreshing tasks:", error);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -189,6 +202,14 @@ export default function TasksByStatusScreen() {
         ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
       >
         {filteredTasks.length === 0 ? (
           <View style={styles.emptyState}>
@@ -208,7 +229,7 @@ export default function TasksByStatusScreen() {
           <View style={styles.tasksList}>
             {filteredTasks.map((task, index) => {
               const fn = functions.find((f) => f.id === task.functionId);
-              const assignee = participants.find((p) => p.id === task.assignedTo);
+              const assignee = participants.find((p) => task.assignedTo?.includes(p.id));
               const dueDateText = getDueDateText(task.dueDate);
               const isOverdue = task.dueDate && new Date(task.dueDate) < new Date();
 

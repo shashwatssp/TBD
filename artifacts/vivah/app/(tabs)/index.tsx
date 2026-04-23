@@ -8,6 +8,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   Share,
   StyleSheet,
@@ -281,6 +282,15 @@ export default function DashboardScreen() {
           },
         ]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+            progressBackgroundColor={Colors.background}
+          />
+        }
       >
         <LinearGradient colors={[Colors.primaryDark, Colors.primary]} style={styles.header}>
           <View style={styles.headerTop}>
@@ -533,8 +543,20 @@ export default function DashboardScreen() {
               <Animated.View entering={FadeInDown.delay(175).duration(500)} style={styles.section}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>Budget Overview</Text>
+                  <Pressable onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push("/budget" as any);
+                  }}>
+                    <Text style={styles.seeAll}>View Details</Text>
+                  </Pressable>
                 </View>
-                <View style={styles.budgetCard}>
+                <Pressable
+                  style={({ pressed }) => [styles.budgetCard, { opacity: pressed ? 0.85 : 1 }]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push("/budget" as any);
+                  }}
+                >
                   <View style={styles.budgetRow}>
                     <View style={styles.budgetItem}>
                       <Text style={styles.budgetLabel}>Total Budget</Text>
@@ -562,7 +584,7 @@ export default function DashboardScreen() {
                   <View style={styles.budgetProgressBg}>
                     <View style={[styles.budgetProgressFill, { width: `${Math.min(budgetUtilization, 100)}%` as any, backgroundColor: budgetUtilization > 90 ? Colors.priorityHigh : Colors.primary }]} />
                   </View>
-                </View>
+                </Pressable>
               </Animated.View>
             )}
 
